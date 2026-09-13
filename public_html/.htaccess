@@ -1,0 +1,28 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Redireciona tudo para index.php, exceto arquivos e pastas reais
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Protege arquivos ocultos (.env, .git, etc)
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# Desativa listagem de diretórios
+Options -Indexes
+
+# Cabeçalhos de segurança
+<IfModule mod_headers.c>
+    # Previne que o conteúdo seja interpretado de maneira errada
+    Header always set X-Content-Type-Options "nosniff"
+
+    # Impede que o site seja carregado em iframes (protege contra clickjacking)
+    Header always set X-Frame-Options "SAMEORIGIN"
+
+    # Protege contra ataques de Cross Site Scripting (XSS)
+    Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
