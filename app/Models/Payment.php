@@ -2,18 +2,19 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Enums\PaymentMethodEnum;
+use App\Enums\StatusPaymentEnum;
 use App\Models\Scopes\UserScope;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
-use App\Enums\StatusPaymentEnum;
-use App\Enums\PaymentMethodEnum;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[ScopedBy([UserScope::class])]
 class Payment extends Model
 {
-    use HasUuids;
+    use HasFactory, HasUuids;
 
     protected $fillable = [
         'id',
@@ -34,7 +35,7 @@ class Payment extends Model
         'notification_attempts',
         'last_notification_attempt',
         'is_notified',
-        'account_id'
+        'account_id',
     ];
 
     protected static function boot()

@@ -185,20 +185,20 @@ Como subir (Sail): `composer install`, criar `.env`, `php artisan key:generate`,
 
 ## 8. Pontos de atenção encontrados na leitura
 
-Observações para revisão, das mais importantes às menores. O item 7 já foi corrigido (ver §9); os demais seguem em aberto.
+Observações para revisão, das mais importantes às menores. Itens 5, 7 e 9 já foram corrigidos (ver §9 para o 7; os demais abaixo); os demais seguem em aberto.
 
 **Segurança / integridade**
 1. **Cancelamento forjável no checkout** — [PaymentTimer](app/Livewire/PaymentTimer.php): `cancelar()` é método público e `expirationDate` é propriedade pública (adulterável no cliente Livewire). Qualquer pagador pode cancelar a própria cobrança. Pior: o pagamento cancelado localmente deixa de ser consultado pelo `ProcessPaymentController`, então um PIX pago depois **não é reconhecido**.
 2. **`AccountResource` sem escopo** — `Account` não tem `UserScope`; um usuário autenticado pode abrir `/admin/accounts/{uuid}/edit` de outra conta se souber o id.
 3. **Painel/Telescope** — `User::canAccessPanel()` retorna sempre `true`; o gate do Telescope libera qualquer usuário autenticado; `laravel/telescope` está em `require` (produção). Telescope guarda payloads (incluindo dados de clientes e o token) em produção só se cair nos filtros, mas fica exposto a qualquer login.
 4. **`api_token` em texto puro**, comparado direto no banco; o token aparece em claro no painel.
-5. **Bug no `Config::boot`** — usa `$model->api_token` (variável inexistente; deveria ser `$item`), então o `empty()` é sempre verdadeiro e sobrescreve qualquer token fornecido.
+5. ~~**Bug no `Config::boot`** — usa `$model->api_token` (variável inexistente; deveria ser `$item`), então o `empty()` é sempre verdadeiro e sobrescreve qualquer token fornecido.~~ — **corrigido** (`$item->api_token`); o guard agora funciona e só gera token novo quando não há um já definido no model.
 6. `ApiTokenMiddleware` quebra (erro 500) se a conta do token não tiver nenhum `User`; e a API sempre atua como "primeiro usuário da conta".
 7. ~~Rate limit `throttle` em `/checkout` e no grupo `web` bloqueando clientes legítimos com HTTP 429~~ — **corrigido**, ver §9.
 
 **Lógica**
 8. Só o primeiro item é enviado ao provedor; `quantity` ignorada; valores multi-item não são somados.
-9. `CheckoutController` faz `$paymentEnum->value`/`$paymentStatusEnum->value` sem tratar `null` (status/método desconhecido do provedor → erro 500 após o pedido já criado no provedor).
+9. ~~`CheckoutController` faz `$paymentEnum->value`/`$paymentStatusEnum->value` sem tratar `null` (status/método desconhecido do provedor → erro 500 após o pedido já criado no provedor).~~ — **corrigido**: em caso de `status`/`payment_method` não mapeado, cai para `PENDING`/`PIX` e loga warning com o `id` do pedido no provedor para investigação manual.
 10. `duration` é `string` em `configs` mas usado como inteiro em `addSeconds`.
 11. Sem `withoutOverlapping()` nos comandos de 10 s: se o provedor for lento, execuções se sobrepõem e podem gerar webhooks duplicados. `ProcessPaymentController` faz uma chamada HTTP por pagamento pendente (sem timeout/erro tratado).
 12. `ConfigResource::getRecord()` contém um `dd()` esquecido (não é chamado hoje).
