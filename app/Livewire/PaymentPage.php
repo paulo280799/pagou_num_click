@@ -2,12 +2,13 @@
 
 namespace App\Livewire;
 
-use Livewire\Component;
 use App\Models\Payment;
+use Livewire\Component;
 
 class PaymentPage extends Component
 {
     public $payment;
+
     public $id;
 
     public function mount($id)
@@ -23,6 +24,12 @@ class PaymentPage extends Component
 
     public function render()
     {
-        return view('livewire.payment-page');
+        $merchantName = $this->payment->account->name ?? 'Loja';
+
+        return view('livewire.payment-page', [
+            'merchantName' => $merchantName,
+            'merchantInitial' => mb_strtoupper(mb_substr($merchantName, 0, 1)),
+            'orderRef' => $this->payment->refExternal ?? mb_substr($this->payment->id, 0, 8),
+        ]);
     }
 }

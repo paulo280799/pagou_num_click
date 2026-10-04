@@ -14,15 +14,18 @@ class PaymentTimerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_mount_loads_payment_and_expiration_date(): void
+    public function test_mount_loads_time_left_from_database(): void
     {
         $account = Account::factory()->create();
-        $payment = Payment::factory()->create(['account_id' => $account->id]);
+        $payment = Payment::factory()->create([
+            'account_id' => $account->id,
+            'expirationDate' => now()->addMinutes(10),
+        ]);
 
         $component = Livewire::test(PaymentTimer::class, ['paymentId' => $payment->id]);
 
-        $this->assertTrue($component->get('payment')->is($payment));
-        $this->assertNotNull($component->get('expirationDate'));
+        $this->assertNotNull($component->get('timeLeft'));
+        $this->assertGreaterThan(0, $component->get('timeLeft'));
     }
 
     public function test_check_expiration_cancels_payment_when_expired(): void
@@ -51,14 +54,30 @@ class PaymentTimerTest extends TestCase
         $this->assertSame(StatusPaymentEnum::PENDING, $payment->refresh()->status);
     }
 
-    public function test_cancelar_marks_payment_as_canceled(): void
+    public function test_check_expiration_does_not_cancel_when_not_actually_expired(): void
     {
         $account = Account::factory()->create();
-        $payment = Payment::factory()->create(['account_id' => $account->id]);
+        $payment = Payment::factory()->create([
+            'account_id' => $account->id,
+            'expirationDate' => now()->addMinutes(10),
+        ]);
 
-        Livewire::test(PaymentTimer::class, ['paymentId' => $payment->id])
-            ->call('cancelar');
+        $component = Livewire::test(PaymentTimer::class, ['paymentId' => $payment->id]);
 
-        $this->assertSame(StatusPaymentEnum::CANCELED, $payment->refresh()->status);
+        // Simula client tentando forjar estado client-side antes de chamar checkExpiration.
+        $component->set('timeLeft', -999)
+            ->call('checkExpiration');
+
+        $this->assertSame(StatusPaymentEnum::PENDING, $payment->refresh()->status);
+    }
+
+    public function test_no_public_cancelar_method_is_exposed(): void
+    {
+        $this->assertFalse(method_exists(PaymentTimer::class, 'cancelar'));
+    }
+
+    public function test_no_public_expiration_date_property_is_exposed(): void
+    {
+        $this->assertFalse(property_exists(PaymentTimer::class, 'expirationDate'));
     }
 }

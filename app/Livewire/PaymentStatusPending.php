@@ -6,12 +6,17 @@ use Livewire\Component;
 
 class PaymentStatusPending extends Component
 {
+    public string $paymentId;
+
     public string $qrCode;
+
     public string $copyPaste;
+
     public float $amount;
 
-    public function mount(string $qrCode, string $copyPaste, float $amount)
+    public function mount(string $paymentId, string $qrCode, string $copyPaste, float $amount)
     {
+        $this->paymentId = $paymentId;
         $this->qrCode = $qrCode;
         $this->copyPaste = $copyPaste;
         $this->amount = $amount;

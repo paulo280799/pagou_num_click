@@ -2,60 +2,55 @@
 
 namespace App\Livewire;
 
-use Livewire\Component;
+use App\Enums\StatusPaymentEnum;
 use App\Models\Payment;
 use Carbon\Carbon;
-use App\Enums\StatusPaymentEnum;
+use Livewire\Component;
 
 class PaymentTimer extends Component
 {
-    public $payment;
     public $paymentId;
+
     public $timeLeft;
-    public $expirationDate;
 
     public function mount($paymentId)
     {
         $this->paymentId = $paymentId;
 
-        $this->loadPayment();
+        $this->timeLeft = now()->diffInSeconds($this->freshPayment()->expirationDate, false);
     }
 
-    public function loadPayment()
+    private function freshPayment(): Payment
     {
-        $this->payment = Payment::withoutGlobalScopes()->findOrFail($this->paymentId);
-        $this->expirationDate = $this->payment->expirationDate;
-    }
-
-    public function calculateTimeLeft()
-    {
-        $targetDate = Carbon::parse($this->expirationDate);
-        $now = Carbon::now();
-
-        $this->timeLeft = $now->diffInSeconds($targetDate, false);
-    }
-
-    public function cancelar()
-    {
-        $this->payment->update(['status' => StatusPaymentEnum::CANCELED]);
+        return Payment::withoutGlobalScopes()->findOrFail($this->paymentId);
     }
 
     public function checkExpiration()
     {
-        $expirationTime = Carbon::parse($this->expirationDate);
+        $payment = $this->freshPayment();
 
-        if (now()->greaterThanOrEqualTo($expirationTime)) {
-            $this->cancelar();
+        if (now()->greaterThanOrEqualTo(Carbon::parse($payment->expirationDate))) {
+            $this->cancelarSeExpirado($payment);
+
             return;
         }
 
-        $this->calculateTimeLeft();
+        $this->timeLeft = now()->diffInSeconds($payment->expirationDate, false);
+    }
+
+    private function cancelarSeExpirado(Payment $payment): void
+    {
+        if ($payment->status === StatusPaymentEnum::PENDING && now()->greaterThanOrEqualTo(Carbon::parse($payment->expirationDate))) {
+            $payment->update(['status' => StatusPaymentEnum::CANCELED]);
+        }
     }
 
     public function render()
     {
         return view('livewire.payment-timer', [
-            'formattedTimeLeft' => gmdate("i:s", max(0, $this->timeLeft))
+            'expirationTimestamp' => Carbon::parse($this->freshPayment()->expirationDate)->timestamp,
+            'formattedTimeLeft' => gmdate('i:s', max(0, $this->timeLeft)),
+            'urgent' => $this->timeLeft <= 60,
         ]);
     }
 }

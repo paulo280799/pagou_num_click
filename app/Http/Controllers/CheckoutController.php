@@ -70,6 +70,10 @@ class CheckoutController extends Controller
 
         $responseData = $response->json();
 
+        if (empty($responseData['charges'][0]['last_transaction']['qr_code_url'])) {
+            Log::error("Pedido {$responseData['id']} criado no provedor mas charge não retornou qr_code_url; resposta completa: ".json_encode($responseData));
+        }
+
         $paymentMethodFromApi = $response['charges'][0]['payment_method'] ?? null;
         $paymentEnum = PaymentMethodEnum::tryFrom(strtoupper((string) $paymentMethodFromApi));
 
