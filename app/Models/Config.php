@@ -2,24 +2,23 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Str;
-
 use App\Models\Scopes\UserScope;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 #[ScopedBy([UserScope::class])]
 class Config extends Model
 {
-    use HasUuids;
+    use HasFactory, HasUuids;
 
     protected $fillable = [
         'duration',
         'notification_url',
         'redirect_url',
-        'account_id'
+        'account_id',
     ];
 
     protected static function boot()
@@ -31,7 +30,7 @@ class Config extends Model
 
             $item->account_id = auth()->user()->account->id;
 
-            if (empty($model->api_token)) {
+            if (empty($item->api_token)) {
                 // Gerar o token de acesso quando o modelo for criado pela primeira vez
                 $item->api_token = Str::random(30); // Você pode ajustar o tamanho do token conforme necessário
             }

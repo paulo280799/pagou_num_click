@@ -10,6 +10,7 @@ use App\Enums\PaymentMethodEnum;
 use App\Http\Requests\CheckoutRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class CheckoutController extends Controller
 {
@@ -70,10 +71,14 @@ class CheckoutController extends Controller
         $responseData = $response->json();
 
         $paymentMethodFromApi = $response['charges'][0]['payment_method'] ?? null;
-        $paymentEnum = PaymentMethodEnum::tryFrom(strtoupper($paymentMethodFromApi));
+        $paymentEnum = PaymentMethodEnum::tryFrom(strtoupper((string) $paymentMethodFromApi));
 
         $paymentStatusFromApi = $response['status'] ?? null;
-        $paymentStatusEnum = StatusPaymentEnum::tryFrom(strtoupper($paymentStatusFromApi));
+        $paymentStatusEnum = StatusPaymentEnum::tryFrom(strtoupper((string) $paymentStatusFromApi));
+
+        if (!$paymentEnum || !$paymentStatusEnum) {
+            Log::warning("Pedido {$responseData['id']} criado no provedor com payment_method/status não mapeado ({$paymentMethodFromApi}/{$paymentStatusFromApi}); usando fallback PIX/PENDING.");
+        }
 
         $payment = $this->payment->create([
             'ide' => $responseData['id'],
@@ -81,8 +86,8 @@ class CheckoutController extends Controller
             'copyPaste' => $responseData['charges'][0]['last_transaction']['qr_code'],
             'amount' =>  $this->centavosParaReais($responseData['amount']),
 
-            'payment_method' => $paymentEnum->value,
-            'status' => $paymentStatusEnum->value,
+            'payment_method' => ($paymentEnum ?? PaymentMethodEnum::PIX)->value,
+            'status' => ($paymentStatusEnum ?? StatusPaymentEnum::PENDING)->value,
 
             'refExternal' => $validated['refExternal'],
 
