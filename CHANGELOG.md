@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-04 (3)
+- Adicionada página de vendas pública em `GET /` (`routes/web.php`, rota `landing`; view `resources/views/landing.blade.php`), implementada a partir da prévia aprovada pelo cliente. CSS/JS inline na view (sem build Vite), fontes via Google Fonts, tema claro/escuro automático por `prefers-color-scheme`. Seções: hero com checkout de exemplo, como funciona, recursos, integração (exemplo de `POST /api/create-payment`), planos, FAQ e CTA.
+- Destino dos botões "Quero contratar"/"Falar com a gente" configurável via `LANDING_CONTACT_URL` (`config/services.php` → `services.landing.contact_url`); sem a variável, cai para a âncora `#topo`. **Pendente:** definir o contato real (WhatsApp/e-mail/formulário) e setar no `.env`.
+- Preços dos planos e taxas ficaram como "Sob consulta" (a prévia usava "A DEFINIR", que não deve ir a público). Nomes dos planos (Início/Negócio/Sob medida) são sugestão e podem mudar. O exemplo de payload da API na página é ilustrativo — conferir contra `CheckoutRequest`.
+- Adicionado `tests/Feature/LandingPageTest.php` (render, CTA com e sem `LANDING_CONTACT_URL`). Suíte completa: 83 testes passando.
+
 ## 2026-10-04 (2)
 - Corrigido `Config::boot()` (`app/Models/Config.php`): usava `$model->api_token` (variável inexistente) em vez de `$item`. `empty()` nunca lançava erro em variável indefinida, só sempre avaliava `true`, sobrescrevendo qualquer `api_token` fornecido. Agora o guard funciona de verdade.
 - Corrigido `CheckoutController::store` (`app/Http/Controllers/CheckoutController.php`): `payment_method`/`status` desconhecidos na resposta do provedor (`tryFrom` retornando `null`) quebravam com `ErrorException` **depois** do pedido já criado no provedor. Agora cai para `PaymentMethodEnum::PIX`/`StatusPaymentEnum::PENDING` e loga `warning` com o `id` do pedido pra investigação manual — decisão: time preferiu não deixar o pagamento órfão (sem `Payment` local) nesse cenário raro.
