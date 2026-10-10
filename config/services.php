@@ -33,4 +33,8 @@ return [
     
     'webhook_secret' => env('WEBHOOK_SECRET'),
 
+    'landing' => [
+        'contact_url' => env('LANDING_CONTACT_URL'),
+    ],
+
 ];
