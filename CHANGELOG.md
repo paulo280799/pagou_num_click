@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 (6)
+- Landing page (`/`) atualizada para as novas funcionalidades: PIX **e cartão** no texto, no hero e nos planos; prévia do checkout com abas Pix/Cartão interativas (formulário de cartão de exemplo); novos recursos "PIX, cartão ou ambos", "Cartão de crédito" (tokenização no navegador) e "Documentação interativa"; exemplo de integração com o payload real (`refExternal`, `payment_methods`, `items`, `customer`); botão "Ver documentação da API" para `/api/docs`; FAQ com cartão, escolha de meios e segurança dos dados. Testes novos em `LandingPageTest`.
+
 ## 2026-10-14 (5)
 - `POST /api/create-payment`: novo campo opcional `payment_methods` (`pix`, `credit_card`; padrão ambos) que define o que o checkout mostra. Só-cartão não cria pedido PIX no provedor (`ide`/`qrCode`/`copyPaste` agora nullable; migration `add_payment_methods_to_payments_table` + coluna JSON `payment_methods`); só-Pix esconde a aba de cartão e `pay-card` responde 409; cartão pedido explicitamente sem `STONE_PUBLIC_KEY_INTEGRATION` → 422. Polling pula a consulta PIX quando `ide` é nulo.
 - Validação reforçada em `CheckoutRequest`: limites de tamanho, `amount` ≥ 0.01, CPF (11) / CNPJ (14) conforme `customer.type`, telefone só dígitos, `payment_methods` sem repetição; erros sempre em JSON 422 (antes redirect 302 sem `Accept: application/json`).
