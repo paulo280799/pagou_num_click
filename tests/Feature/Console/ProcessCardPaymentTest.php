@@ -107,4 +107,30 @@ class ProcessCardPaymentTest extends TestCase
         Log::shouldHaveReceived('error')->once();
         $this->assertSame(PaymentMethodEnum::CREDIT_CARD, $payment->refresh()->payment_method);
     }
+
+    public function test_card_only_payment_is_not_polled_at_pix_and_cancels_on_expiry(): void
+    {
+        $live = $this->pending('cardOnly');
+        $expired = $this->pending('cardOnly', ['expirationDate' => now()->subMinute()]);
+        Http::fake();
+
+        $this->artisan('app:process-payment');
+
+        Http::assertNothingSent();
+        $this->assertSame(StatusPaymentEnum::PENDING, $live->refresh()->status);
+        $this->assertSame(StatusPaymentEnum::CANCELED, $expired->refresh()->status);
+    }
+
+    public function test_card_only_paid_payment_is_not_watched_for_open_pix(): void
+    {
+        Payment::factory()->cardOnly()->paid()->create([
+            'account_id' => Account::factory()->create()->id,
+            'expirationDate' => now()->addMinutes(5),
+        ]);
+        Http::fake();
+
+        $this->artisan('app:process-payment');
+
+        Http::assertNothingSent();
+    }
 }

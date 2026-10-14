@@ -57,6 +57,11 @@ class ProcessPaymentController extends Controller
             return;
         }
 
+        // Checkout só-cartão não tem pedido PIX: nada a consultar além da tentativa de cartão e da expiração.
+        if (! $payment->ide) {
+            return;
+        }
+
         $response = $this->apiService->get_order($payment->ide);
 
         $paymentStatusFromApi = $response['status'] ?? null;
@@ -170,6 +175,7 @@ class ProcessPaymentController extends Controller
             ->withoutGlobalScopes()
             ->where('status', StatusPaymentEnum::PAID)
             ->where('payment_method', PaymentMethodEnum::CREDIT_CARD)
+            ->whereNotNull('ide')
             ->where('expirationDate', '>=', now()->subMinutes(5))
             ->get();
 

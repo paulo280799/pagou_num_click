@@ -131,4 +131,29 @@ class CardCheckoutTest extends TestCase
 
         $this->assertSame(StatusPaymentEnum::PAID, $component->get('payment')->status);
     }
+
+    public function test_pix_only_hides_card_tab_and_form(): void
+    {
+        $p = $this->make('pixOnly');
+
+        $this->get("/checkout/{$p->id}")
+            ->assertOk()
+            ->assertSee('Copiar código Pix')
+            ->assertDontSee('role="tablist"', false)
+            ->assertDontSee('x-data="cardForm(', false)
+            ->assertDontSee('pk_test_abc123');
+    }
+
+    public function test_card_only_hides_pix_and_tabs_and_shows_card_form(): void
+    {
+        $p = $this->make('cardOnly');
+
+        $this->get("/checkout/{$p->id}")
+            ->assertOk()
+            ->assertSee('x-data="cardForm(', false)
+            ->assertDontSee('role="tablist"', false)
+            ->assertDontSee('Copiar código Pix')
+            ->assertDontSee('Pagar com Pix')
+            ->assertSee("tab: 'card'", false);
+    }
 }

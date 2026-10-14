@@ -1,8 +1,8 @@
-<div @if ($cardEnabled) wire:poll.5s @endif x-data="{ copied: false, tab: 'pix' }" class="flex-1 overflow-y-auto px-5 pb-5 pt-5 flex flex-col gap-5">
+<div @if ($cardEnabled) wire:poll.5s @endif x-data="{ copied: false, tab: '{{ $pixEnabled ? 'pix' : 'card' }}' }" class="flex-1 overflow-y-auto px-5 pb-5 pt-5 flex flex-col gap-5">
 
     <livewire:payment-timer :payment-id="$paymentId" />
 
-    @if ($cardEnabled)
+    @if ($cardEnabled && $pixEnabled)
         <div role="tablist" class="grid grid-cols-2 gap-1 p-1 bg-[#E8E6DF] rounded-xl">
             <button type="button" role="tab" :aria-selected="tab === 'pix'" @click="tab = 'pix'"
                 :class="tab === 'pix' ? 'bg-white text-[#141413] shadow-sm' : 'text-[#6B6A64]'"
@@ -13,6 +13,7 @@
         </div>
     @endif
 
+    @if ($pixEnabled)
     <div x-show="tab === 'pix'" class="flex flex-col gap-5">
 
     <div class="bg-white rounded-[20px] p-6 flex flex-col items-center gap-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
@@ -59,6 +60,7 @@
     </div>
 
     </div>
+    @endif
 
     @if ($cardEnabled)
         <div x-show="tab === 'card'" x-cloak>

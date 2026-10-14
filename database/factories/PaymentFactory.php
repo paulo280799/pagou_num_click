@@ -94,4 +94,20 @@ class PaymentFactory extends Factory
             'card_attempt_started_at' => now()->subMinutes(10),
         ]);
     }
+
+    public function pixOnly(): static
+    {
+        return $this->withCustomer()->state(fn () => ['payment_methods' => ['pix']]);
+    }
+
+    public function cardOnly(): static
+    {
+        return $this->withCustomer()->state(fn () => [
+            'payment_methods' => ['credit_card'],
+            'payment_method' => PaymentMethodEnum::CREDIT_CARD,
+            'ide' => null,
+            'qrCode' => null,
+            'copyPaste' => null,
+        ]);
+    }
 }

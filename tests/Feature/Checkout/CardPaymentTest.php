@@ -261,4 +261,26 @@ class CardPaymentTest extends TestCase
         $this->assertSame('fulano@example.com', $payment->refresh()->customer['email']);
         $this->assertArrayNotHasKey('customer', $payment->toArray());
     }
+
+    public function test_pix_only_payment_rejects_card_with_409_without_calling_provider(): void
+    {
+        $payment = $this->payment('pixOnly');
+        Http::fake();
+
+        $this->pay($payment)->assertStatus(409);
+
+        Http::assertNothingSent();
+        $this->assertNull($payment->refresh()->card_attempt_key);
+    }
+
+    public function test_card_only_payment_is_charged_and_marked_paid(): void
+    {
+        $payment = $this->payment('cardOnly');
+        Http::fake(['*/v5/orders' => Http::response($this->orderResponse('captured'), 200)]);
+
+        $this->pay($payment)->assertOk()->assertJson(['status' => 'paid']);
+
+        $this->assertSame(StatusPaymentEnum::PAID, $payment->refresh()->status);
+        $this->assertSame(PaymentMethodEnum::CREDIT_CARD, $payment->payment_method);
+    }
 }

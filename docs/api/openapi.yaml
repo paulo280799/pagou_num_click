@@ -1,0 +1,380 @@
+openapi: 3.0.3
+info:
+  title: Pagou num Click — API de pagamentos
+  version: 1.1.0
+  description: |
+    Gateway/intermediário de pagamentos PIX e cartão de crédito.
+
+    Fluxo de integração:
+    1. Seu sistema chama `POST /api/create-payment` e recebe um `payment_link`.
+    2. Redirecione o pagador para o `payment_link` (página de checkout hospedada).
+    3. Quando o pagamento muda de estado, enviamos um webhook (`POST` para a `notification_url` da sua conta).
+       Veja o webhook em **Webhooks** abaixo.
+
+    Valores monetários são sempre em **reais**, string/número com **ponto decimal** e até 2 casas (`"10.50"`).
+servers:
+  - url: /
+    description: Mesmo host de onde esta documentação foi aberta (APP_URL)
+tags:
+  - name: Pagamentos
+security:
+  - bearerAuth: []
+paths:
+  /api/create-payment:
+    post:
+      tags:
+        - Pagamentos
+      operationId: createPayment
+      summary: Cria um pagamento e devolve o link de checkout
+      description: |
+        Cria a cobrança e devolve um link de checkout hospedado.
+
+        **Meios de pagamento** (`payment_methods`): define o que o pagador vê no checkout.
+
+        | `payment_methods` | Checkout |
+        |---|---|
+        | omitido ou `["pix","credit_card"]` | abas Pix e Cartão |
+        | `["pix"]` | somente Pix (QR code + copia e cola) |
+        | `["credit_card"]` | somente cartão (nenhum pedido PIX é criado) |
+
+        - `credit_card` exige cartão habilitado na conta; pedido explicitamente sem estar habilitado → `422`.
+        - O valor cobrado é a soma de `amount × quantity` de todos os `items`.
+        - O prazo de validade do checkout vem da configuração da conta (`duration`).
+        - `refExternal` é único por conta: repetir o valor → `422`. Use-o como chave de idempotência do seu lado.
+        - Erros de validação são sempre JSON, mesmo sem `Accept: application/json`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+            examples:
+              pixECartao:
+                summary: Pix + cartão (padrão)
+                value:
+                  refExternal: pedido-1001
+                  items:
+                    - amount: '149.90'
+                      description: Tênis Corrida
+                      quantity: 1
+                  customer:
+                    name: Maria da Silva
+                    email: maria@example.com
+                    type: individual
+                    document: 123.456.789-09
+                    phones:
+                      home_phone:
+                        country_code: '55'
+                        area_code: '11'
+                        number: '999999999'
+              somentePix:
+                summary: Somente Pix
+                value:
+                  refExternal: pedido-1002
+                  payment_methods:
+                    - pix
+                  items:
+                    - amount: '49.90'
+                      description: Assinatura mensal
+                      quantity: 1
+                  customer:
+                    name: Maria da Silva
+                    email: maria@example.com
+                    type: individual
+                    document: '12345678909'
+                    phones:
+                      home_phone:
+                        country_code: '55'
+                        area_code: '11'
+                        number: '999999999'
+              somenteCartao:
+                summary: Somente cartão, vários itens
+                value:
+                  refExternal: pedido-1003
+                  payment_methods:
+                    - credit_card
+                  items:
+                    - amount: '100.00'
+                      description: Camiseta
+                      quantity: 2
+                    - amount: '25.50'
+                      description: Frete
+                      quantity: 1
+                  customer:
+                    name: Empresa LTDA
+                    email: financeiro@empresa.com
+                    type: corporation
+                    document: 12.345.678/0001-95
+                    phones:
+                      home_phone:
+                        country_code: '55'
+                        area_code: '21'
+                        number: '33334444'
+      responses:
+        '201':
+          description: Pagamento criado. Redirecione o pagador para `payment_link`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePaymentResponse'
+              example:
+                payment_link: https://seu-dominio.com/checkout/0b5b0b42-5ab2-4e4c-9f0e-3d1a8f6a1c11
+        '401':
+          description: Token ausente ou inválido, ou conta sem usuário.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                error: Unauthorized
+        '422':
+          description: |
+            Duas formas possíveis:
+            - **Validação** (`ValidationError`): campo inválido ou `refExternal` repetido.
+            - **Provedor/meio indisponível** (`ProviderError`): o provedor recusou o pedido, o PIX veio sem QR code, ou `credit_card` foi pedido sem estar habilitado.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ProviderError'
+              examples:
+                validacao:
+                  summary: Validação
+                  value:
+                    message: 'O campo items.0.amount deve ser um valor em reais com ponto decimal e
+                      até 2 casas (ex.: 10.50).'
+                    errors:
+                      items.0.amount:
+                        - 'O campo items.0.amount deve ser um valor em reais com
+                          ponto decimal e até 2 casas (ex.: 10.50).'
+                refExternalRepetido:
+                  summary: refExternal já usado
+                  value:
+                    message: The ref external has already been taken.
+                    errors:
+                      refExternal:
+                        - The ref external has already been taken.
+                cartaoIndisponivel:
+                  summary: Cartão não habilitado
+                  value:
+                    success: false
+                    message: Pagamento com cartão indisponível nesta conta.
+                    errors:
+                      payment_methods:
+                        - O meio credit_card não está disponível.
+        '500':
+          description: Erro inesperado. Tente novamente; use um `refExternal` novo só se o
+            anterior não tiver gerado pagamento.
+        4XX:
+          description: Erro devolvido pelo provedor de pagamento ao criar o pedido (mesmo
+            status HTTP do provedor).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderError'
+webhooks:
+  paymentStatusChanged:
+    post:
+      tags:
+        - Pagamentos
+      summary: Webhook — mudança de status do pagamento
+      description: |
+        Enviado para a `notification_url` configurada na conta quando o pagamento sai de `PENDING`
+        (`PAID`, `FAILED` ou `CANCELED`). Header `X-Webhook-Secret` traz o segredo compartilhado — valide-o.
+        Qualquer resposta `2xx` conta como entregue. Falhas são reenviadas com espera crescente
+        (1 min, 5 min, 10 min, 30 min, 1 h) e abandonadas após 5 tentativas.
+      security: []
+      parameters:
+        - name: X-Webhook-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookPayload'
+      responses:
+        '200':
+          description: Recebido.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: '`api_token` da configuração da conta (painel `/admin`). Enviar
+        `Authorization: Bearer <api_token>`.'
+  schemas:
+    CreatePaymentRequest:
+      type: object
+      required:
+        - refExternal
+        - items
+        - customer
+      properties:
+        refExternal:
+          type: string
+          maxLength: 255
+          description: Identificador do pedido no seu sistema. Único por conta. Devolvido
+            no webhook como `payment_id`.
+          example: pedido-1001
+        payment_methods:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - pix
+              - credit_card
+          default:
+            - pix
+            - credit_card
+          description: Meios exibidos no checkout. Omitido = Pix e cartão.
+          example:
+            - pix
+            - credit_card
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: Itens da cobrança. Total = soma de `amount × quantity`.
+          items:
+            $ref: '#/components/schemas/Item'
+        customer:
+          $ref: '#/components/schemas/Customer'
+    Item:
+      type: object
+      required:
+        - amount
+        - description
+        - quantity
+      properties:
+        amount:
+          type: string
+          pattern: ^\d{1,9}(\.\d{1,2})?$
+          description: Preço **unitário** em reais, ponto decimal, até 2 casas. Mínimo
+            `0.01`. Número JSON também é aceito.
+          example: '149.90'
+        description:
+          type: string
+          maxLength: 255
+          example: Tênis Corrida
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 9999
+          example: 1
+    Customer:
+      type: object
+      required:
+        - name
+        - email
+        - type
+        - document
+        - phones
+      properties:
+        name:
+          type: string
+          maxLength: 64
+          example: Maria da Silva
+        email:
+          type: string
+          format: email
+          maxLength: 64
+          example: maria@example.com
+        type:
+          type: string
+          enum:
+            - individual
+            - corporation
+          description: '`individual` = pessoa física (CPF), `corporation` = pessoa
+            jurídica (CNPJ).'
+        document:
+          type: string
+          maxLength: 32
+          description: CPF (11 dígitos) para `individual` ou CNPJ (14 dígitos) para
+            `corporation`. Máscara é aceita e removida.
+          example: 123.456.789-09
+        phones:
+          type: object
+          required:
+            - home_phone
+          properties:
+            home_phone:
+              type: object
+              required:
+                - country_code
+                - area_code
+                - number
+              properties:
+                country_code:
+                  type: string
+                  pattern: ^\d{1,3}$
+                  description: DDI, sem `+`.
+                  example: '55'
+                area_code:
+                  type: string
+                  pattern: ^\d{2,3}$
+                  description: DDD.
+                  example: '11'
+                number:
+                  type: string
+                  pattern: ^\d{8,9}$
+                  description: Número sem DDD.
+                  example: '999999999'
+    CreatePaymentResponse:
+      type: object
+      required:
+        - payment_link
+      properties:
+        payment_link:
+          type: string
+          format: uri
+          description: URL do checkout hospedado. Envie o pagador para ela.
+    UnauthorizedError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Unauthorized
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+          description: Mapa `campo → lista de mensagens`. Campos aninhados usam notação de
+            ponto (`items.0.amount`).
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    ProviderError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Erro ao processar pagamento
+        errors:
+          description: Corpo de erro do provedor, repassado como veio.
+    WebhookPayload:
+      type: object
+      properties:
+        payment_id:
+          type: string
+          description: O `refExternal` informado na criação.
+          example: pedido-1001
+        status:
+          type: string
+          enum:
+            - PAID
+            - FAILED
+            - CANCELED

@@ -20,40 +20,79 @@ class CheckoutController extends Controller
     {
         $validated = $request->validated();
 
+        $methods = $validated['payment_methods'] ?? CheckoutRequest::METHODS;
+        $methods = array_values(array_intersect(CheckoutRequest::METHODS, $methods));
+        $cardRequested = in_array('credit_card', $methods, true);
+
+        // Cartão pedido explicitamente mas sem chave pública: falha cedo em vez de gerar checkout sem cartão.
+        // Se `payment_methods` foi omitido, o padrão (PIX + cartão) degrada para PIX no checkout.
+        if ($cardRequested && isset($validated['payment_methods']) && blank(config('integration.public_key'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pagamento com cartão indisponível nesta conta.',
+                'errors' => ['payment_methods' => ['O meio credit_card não está disponível.']],
+            ], 422);
+        }
+
         $this->config = $this->config->first();
 
         $expirationDate = Carbon::now()->addSeconds($this->config->duration)->format('Y-m-d H:i:s');
 
         $expiresAt = Carbon::now()->addHours(3)->addSeconds($this->config->duration)->format('Y-m-d H:i:s');
 
+        $items = array_map(fn ($item) => [
+            'amount' => $this->reaisParaCentavos($item['amount']),
+            'description' => $item['description'],
+            'quantity' => (int) $item['quantity'],
+        ], $validated['items']);
+
+        $totalCents = array_sum(array_map(fn ($item) => $item['amount'] * $item['quantity'], $items));
+
+        $customer = [
+            "name" => $validated['customer']['name'],
+            "email" => $validated['customer']['email'],
+            "type" => $validated['customer']['type'],
+            "document" => $this->removerMascaraCpf($validated['customer']['document']),
+            "phones" => [
+                "home_phone" => [
+                    "country_code" => $validated['customer']['phones']['home_phone']['country_code'],
+                    "number" => $validated['customer']['phones']['home_phone']['number'],
+                    "area_code" => $validated['customer']['phones']['home_phone']['area_code']
+                ]
+            ]
+        ];
+
+        $attributes = [
+            'refExternal' => $validated['refExternal'],
+            'customer' => $customer,
+            'payment_methods' => $methods,
+            'duration' => $this->config->duration,
+            'expirationDate' => $expirationDate,
+            'redirect_url' => $this->config->redirect_url,
+            'notification_url' => $this->config->notification_url
+        ];
+
+        // Checkout só-cartão: nenhum pedido PIX no provedor (o pedido de cartão nasce no pay-card).
+        if ($methods === ['credit_card']) {
+            $payment = $this->payment->create($attributes + [
+                'amount' => $this->centavosParaReais($totalCents),
+                'payment_method' => PaymentMethodEnum::CREDIT_CARD->value,
+                'status' => StatusPaymentEnum::PENDING->value,
+            ]);
+
+            return $this->paymentLinkResponse($payment);
+        }
+
         $body = [
-            "items" => [
-                [
-                    "amount" => $this->reaisParaCentavos($validated['items'][0]['amount']),
-                    "description" => $validated['items'][0]['description'],
-                    "quantity" => 1
-                ]
-            ],
-            "customer" => [
-                "name" => $validated['customer']['name'],
-                "email" => $validated['customer']['email'],
-                "type" => $validated['customer']['type'],
-                "document" => $this->removerMascaraCpf($validated['customer']['document']),
-                "phones" => [
-                    "home_phone" => [
-                        "country_code" => $validated['customer']['phones']['home_phone']['country_code'],
-                        "number" => $validated['customer']['phones']['home_phone']['number'],
-                        "area_code" => $validated['customer']['phones']['home_phone']['area_code']
-                    ]
-                ]
-            ],
+            "items" => $items,
+            "customer" => $customer,
             "payments" => [
                 [
                     "payment_method" => "pix",
                     "pix" => [
                         "expires_at" => (string)$expiresAt
                     ],
-                    "amount" => $this->reaisParaCentavos($validated['items'][0]['amount']),
+                    "amount" => $totalCents,
                 ]
             ]
         ];
@@ -92,7 +131,7 @@ class CheckoutController extends Controller
             Log::warning("Pedido {$responseData['id']} criado no provedor com payment_method/status não mapeado ({$paymentMethodFromApi}/{$paymentStatusFromApi}); usando fallback PIX/PENDING.");
         }
 
-        $payment = $this->payment->create([
+        $payment = $this->payment->create($attributes + [
             'ide' => $responseData['id'],
             'qrCode' => $responseData['charges'][0]['last_transaction']['qr_code_url'],
             'copyPaste' => $responseData['charges'][0]['last_transaction']['qr_code'],
@@ -100,20 +139,16 @@ class CheckoutController extends Controller
 
             'payment_method' => ($paymentEnum ?? PaymentMethodEnum::PIX)->value,
             'status' => ($paymentStatusEnum ?? StatusPaymentEnum::PENDING)->value,
-
-            'refExternal' => $validated['refExternal'],
-            'customer' => $body['customer'],
-
-            'duration' => $this->config->duration,
-            'expirationDate' => $expirationDate,
-            'redirect_url' => $this->config->redirect_url,
-            'notification_url' => $this->config->notification_url
         ]);
 
+        return $this->paymentLinkResponse($payment);
+    }
+
+    private function paymentLinkResponse(Payment $payment): JsonResponse
+    {
         return response()->json([
             'payment_link' => config('app.url').'/checkout/'.$payment->id
         ], 201);
-
     }
 
     private function reaisParaCentavos($valor) {
