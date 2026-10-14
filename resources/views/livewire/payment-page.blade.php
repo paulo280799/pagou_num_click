@@ -16,7 +16,9 @@
         <div class="flex flex-col flex-1 overflow-hidden">
     @endif
         @if ($payment->status === App\Enums\StatusPaymentEnum::PAID)
-            <livewire:payment-status-paid :redirect-url="$payment->redirect_url" :amount="$payment->amount" :paid-at="$payment->paymentDate" />
+            <livewire:payment-status-paid :redirect-url="$payment->redirect_url" :amount="$payment->amount" :paid-at="$payment->paymentDate"
+                :is-card="$payment->payment_method === App\Enums\PaymentMethodEnum::CREDIT_CARD"
+                :card-brand="$payment->card_brand" :card-last-four="$payment->card_last_four" :installments="$payment->installments" />
         @elseif (!in_array($payment->status, [
                 App\Enums\StatusPaymentEnum::PENDING,
                 App\Enums\StatusPaymentEnum::PAID,

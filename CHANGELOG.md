@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-10-12 (6)
+- Checkout de cartão: o aviso "Pagamento em análise" (formulário bloqueado) agora vale para qualquer tentativa sem resultado definitivo (`card_attempt_key` preenchida), inclusive timeout sem `card_order_id`; antes, após timeout e recarga, o formulário reabria e o pagador podia reenviar (seguro pela `Idempotency-Key`, mas confuso). `PaymentStatusPending` passa a fazer `wire:poll.5s` quando o cartão está habilitado, para o aviso sumir quando o polling resolve a tentativa. Testes novos; suíte: 136 passando.
+- Simulação de cartões no sandbox (`4000000000000010/28/36/44/51/69/77/93`): todos aprovaram nesta conta (o simulador não recusa o `…28` como diz a doc); o `…36` caiu em timeout na 1ª tentativa e o reenvio com a mesma `Idempotency-Key` devolveu o mesmo pedido (um único pedido na Pagar.me, sem cobrança dupla).
+
+## 2026-10-12 (5)
+- `WebhookController`: captura `ConnectionException` por pagamento (conta a tentativa e segue o backoff) e usa `timeout(10)`; antes uma URL inalcançável derrubava o `app:process-webhook` e bloqueava a notificação dos demais pagamentos. Teste novo em `ProcessWebhookTest`; suíte: 134 passando.
+- Validação manual do cartão no sandbox: CORS do endpoint de tokens OK no browser, `exp_year` de 2 dígitos aceito, pagamento aprovado (Visa final 0010, 1x) com tela `PAID` e webhook de saída recebido com `status: "PAID"`.
+
+## 2026-10-12 (4)
+- Checkout de cartão: autocompletar de endereço por CEP via ViaCEP (browser, timeout 5 s, falha silenciosa). Campo único de endereço virou Rua + Número (`line_1 = "rua, número"`); só o CEP sai para o ViaCEP. `plano3/design.md` e `tasks.md` atualizados.
+
+## 2026-10-12 (3)
+- Implementado Plano 3 (`.changes/checkout-v2/plano3/`): frontend de cartão no checkout. Abas Pix | Cartão em `payment-status-pending` (só com `STONE_PUBLIC_KEY_INTEGRATION` e `Payment` com `customer`). Formulário em Alpine puro dentro de `wire:ignore` (`partials/card-form.blade.php`, `resources/js/card-form.js`): máscara/Luhn/validade, tokenização direto na Pagar.me, PAN/CVV zerados após tokenizar, envio de `card_token`/`installments`/`billing_address` para `pay-card` com CSRF e tratamento de 200/422/202/503/409/429/rede. Layout ganha meta CSRF e `@vite` do JS.
+- `PaymentStatusPending` calcula `cardEnabled`/`cardInReview` (aviso "em análise" persiste após reload) e expõe `refreshStatus()` (evento `payment-updated` → `PaymentPage::atualizar`). `PaymentStatusPaid` mostra marca/final/parcelas para cartão; textos de `PaymentStatusCanceled` generalizados. Testes em `tests/Feature/Livewire/CardCheckoutTest.php`; suíte: 133 passando. Pendente: validação manual (CORS do endpoint de tokens, `exp_year`) na task 8.
+
+## 2026-10-12 (2)
+- SDD do Plano 3 (frontend de cartão) criado em `.changes/checkout-v2/plano3/` seguindo o padrão do `plano1/` e `plano2/`: `proposal.md`, `design.md`, `tasks.md`; `plano3.md` movido para dentro da pasta. Nenhum código alterado.
+
+## 2026-10-12
+- Implementado Plano 2 (`.changes/checkout-v2/plano2/`): backend de cartão de crédito. Nova rota pública `POST /checkout/{id}/pay-card` (`CardPaymentController`, `PayCardRequest`, limiter `pay-card` 5/10min por IP+Payment) com 3 fases (reserva sob lock + `Idempotency-Key` → chamada Pagar.me com timeout → aplicação do resultado); valor sempre lido do banco; recusa responde 422 sem 500.
+- Migration `add_card_fields_to_payments_table` (`card_order_id`, `card_attempt_key/started_at`, `card_brand`, `card_last_four`, `installments`, `acquirer_*`, `customer` criptografado e oculto). `Payment::markCardPaid/releaseCardAttempt`.
+- Mapper `App\Support\ChargeResult`/`ChargeOutcome` (fonte: `charges[0].last_transaction.status`). `ApiService::create_card_order` e `get_orders_by_code`. `CheckoutController::store` passa a gravar `customer` e responde 422 (sem criar `Payment`) quando a charge PIX vem `failed`/sem QR em HTTP 200. `close_order` não usado (PIX pendente não é cancelável).
+- `ProcessPaymentController`: confere pedido de cartão em análise, não cancela por expiração nesse caso, reconcilia timeout por `code`/`metadata.payment_id` e loga erro se o PIX for pago após cartão aprovado (estorno manual). Telescope oculta `card_token`/`billing_address`.
+- Config novas em `config/integration.php`: `STONE_PUBLIC_KEY_INTEGRATION`, `CARD_MAX_INSTALLMENTS`, `CARD_STATEMENT_DESCRIPTOR`, `CARD_HTTP_TIMEOUT`. Testes novos (mapper, rota de cartão, polling); suíte: 124 passando.
+
+## 2026-10-11
+- SDD do Plano 2 (backend de cartão) criado em `.changes/checkout-v2/plano2/` seguindo o padrão do `plano1/`: `proposal.md`, `design.md`, `tasks.md`; `plano2.md` movido para dentro da pasta (links relativos ajustados). Nenhum código alterado.
+- Validação no sandbox da Pagar.me (chaves de teste do `.env`) para o Plano 2: aprovado OK, falhas vêm com HTTP 200, `customer.document`/`items[].code` obrigatórios, token 1 min e uso único, `Idempotency-Key` funciona, PIX pendente não é cancelável (`close_order` descartado do plano). `plano2/design.md`, `proposal.md`, `tasks.md`, `plano2.md` e `docs/pagarme/cc/doc.md` atualizados com os achados. Nenhum código de produção alterado.
+
+## 2026-10-10
+- Adicionada documentação da integração Pagar.me v5 em `docs/pagarme/pix/doc.md` (criar pedido PIX, objeto `pix`, resposta, status, como o projeto usa, armadilhas) e `docs/pagarme/cc/doc.md` (cartão de crédito: objeto `credit_card`, 3DS, `operation_type`, status; ainda não implementado no projeto, inclui lista do que falta para integrar).
+- Adicionado `docs/pagarme/pix/integration.md`: como a integração PIX funciona hoje no código (criação, transformação de campos, checkout, polling, webhook de saída, ciclo de vida do `Payment`, config e limitações conhecidas).
+- Reescrito `.changes/checkout-v2/plano2.md` (backend de cartão) conforme `docs/pagarme/cc/doc.md`: cartão vira segunda tentativa sobre o `Payment` existente via rota `pay-card` (contrato de `/api/create-payment` preservado); formato `card_token` + `billing_address` confirmado; mapeamento de status por `last_transaction.status`; encerrar PIX com `close_order`; coluna `card_order_id` e `customer` criptografado; idempotência/timeout; rate limit dedicado; lista de pontos a validar no sandbox e impacto nos Planos 3 e 4.
+- `docs/pagarme/cc/doc.md`: adicionada seção de tokenização do cartão (`POST /core/v5/tokens` com `public_key`, uso de `card_token` no pedido, billing address não tokenizado, expiração do token).
+
 ## 2026-10-04 (3)
 - Implementado Plano 1 (`.changes/checkout-v2/plano1/`): melhorias visuais/UX do checkout PIX.
 - **Segurança:** corrigido `PaymentTimer` (`app/Livewire/PaymentTimer.php`) — removida propriedade pública `$expirationDate` e método público `cancelar()` (DOCUMENTACAO.md §8 item 1). Qualquer payer podia cancelar a própria cobrança via Livewire antes da expiração real; pagamento cancelado localmente parava de ser consultado pelo scheduler, então um PIX pago depois nunca era reconhecido. Agora `checkExpiration()` é o único método público e sempre revalida `expirationDate`/`status` lendo do banco (`freshPayment()`), nunca de estado client-side.

@@ -1,6 +1,19 @@
-<div x-data="{ copied: false }" class="flex-1 overflow-y-auto px-5 pb-5 pt-5 flex flex-col gap-5">
+<div @if ($cardEnabled) wire:poll.5s @endif x-data="{ copied: false, tab: 'pix' }" class="flex-1 overflow-y-auto px-5 pb-5 pt-5 flex flex-col gap-5">
 
     <livewire:payment-timer :payment-id="$paymentId" />
+
+    @if ($cardEnabled)
+        <div role="tablist" class="grid grid-cols-2 gap-1 p-1 bg-[#E8E6DF] rounded-xl">
+            <button type="button" role="tab" :aria-selected="tab === 'pix'" @click="tab = 'pix'"
+                :class="tab === 'pix' ? 'bg-white text-[#141413] shadow-sm' : 'text-[#6B6A64]'"
+                class="min-h-[44px] rounded-lg text-sm font-semibold transition-colors">Pix</button>
+            <button type="button" role="tab" :aria-selected="tab === 'card'" @click="tab = 'card'"
+                :class="tab === 'card' ? 'bg-white text-[#141413] shadow-sm' : 'text-[#6B6A64]'"
+                class="min-h-[44px] rounded-lg text-sm font-semibold transition-colors">Cartão</button>
+        </div>
+    @endif
+
+    <div x-show="tab === 'pix'" class="flex flex-col gap-5">
 
     <div class="bg-white rounded-[20px] p-6 flex flex-col items-center gap-4 shadow-[0_1px_2px_rgba(20,20,19,0.04)]">
         <div class="w-[220px] h-[220px] bg-white border border-[#E8E6DF] rounded-xl flex items-center justify-center">
@@ -44,6 +57,21 @@
             </template>
         </button>
     </div>
+
+    </div>
+
+    @if ($cardEnabled)
+        <div x-show="tab === 'card'" x-cloak>
+            @if ($cardInReview)
+                <div class="bg-white rounded-2xl p-5 text-[13px] text-[#141413] leading-snug">
+                    <div class="font-semibold mb-1">Pagamento em análise</div>
+                    <div class="text-[#6B6A64]">Já recebemos uma tentativa de pagamento no cartão. Não pague novamente: esta página será atualizada assim que houver resultado.</div>
+                </div>
+            @else
+                @include('livewire.partials.card-form')
+            @endif
+        </div>
+    @endif
 
     <div class="pt-3.5 mt-auto -mx-5 px-5 bg-white border-t border-[#E8E6DF] flex items-center justify-center gap-1.5 py-3.5">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" stroke="#6B6A64" stroke-width="1.8" stroke-linejoin="round"/></svg>

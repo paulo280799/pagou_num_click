@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Models\Payment;
@@ -46,15 +47,24 @@ class WebhookController extends Controller
             return;
         }
         
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-            'X-Webhook-Secret' => config('services.webhook_secret'), // ou env('WEBHOOK_SECRET')
-        ])->post($payment->notification_url, [
-            'payment_id' => $payment->refExternal,
-            'status' => $payment->status
-        ]);
-        
-        
+        try {
+            $response = Http::timeout(10)->withHeaders([
+                'Content-Type' => 'application/json',
+                'X-Webhook-Secret' => config('services.webhook_secret'), // ou env('WEBHOOK_SECRET')
+            ])->post($payment->notification_url, [
+                'payment_id' => $payment->refExternal,
+                'status' => $payment->status
+            ]);
+        } catch (ConnectionException $e) {
+            // URL inalcançável não pode travar a notificação dos demais pagamentos
+            Log::error("Erro de conexão ao notificar o pagamento {$payment->id}: {$e->getMessage()}");
+            $payment->update([
+                'notification_attempts' => $payment->notification_attempts + 1,
+                'last_notification_attempt' => now()
+            ]);
+            return;
+        }
+
         if ($response->successful()) {
             info("Notificação enviada com sucesso para o pagamento {$payment->id}.");
             $payment->update([
