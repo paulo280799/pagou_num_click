@@ -6,7 +6,7 @@
             :class="status === 'processing' || message === 'Pagamento aprovado!' ? 'bg-[#E4F7EF] text-[#0D8A6F]' : 'bg-[#FBEAE3] text-[#C1440E]'"
             class="rounded-xl px-3.5 py-3 text-[13px] leading-snug">
             <span x-text="message"></span>
-            <button type="button" x-show="declined" @click="tab = 'pix'" class="block mt-1 font-semibold underline">Pagar com Pix</button>
+            @if ($pixEnabled)<button type="button" x-show="declined" @click="tab = 'pix'" class="block mt-1 font-semibold underline">Pagar com Pix</button>@endif
         </div>
 
         <fieldset :disabled="busy || locked" class="flex flex-col gap-3.5 border-0 p-0 m-0">

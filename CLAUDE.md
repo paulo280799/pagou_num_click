@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Pagou num Click** — multi-tenant PIX payment gateway/intermediary (Laravel 10). An external system calls a REST API to create a charge; the service creates the order with an upstream payment provider, returns a checkout link with QR code, polls the provider for status changes, and notifies the client system via webhook. Includes a Filament admin panel for account owners to track transactions.
 
+API reference for `POST /api/create-payment` lives in [docs/api/create-payment.md](docs/api/create-payment.md) and [docs/api/openapi.yaml](docs/api/openapi.yaml) (Swagger UI at `/api/docs`) — **update the OpenAPI spec whenever `CheckoutRequest` or the response changes** (`ApiDocsTest` only checks it parses).
+
 Full technical documentation (flow diagrams, data model, API contract, scheduler internals, known issues) lives in [DOCUMENTACAO.md](DOCUMENTACAO.md) — read it before making non-trivial changes, it is kept up to date and is more detailed than this file.
 
 - Stack: PHP ^8.1, Laravel 10, Filament 3.3 (panel), Livewire 3 (checkout UI), Sanctum, Telescope, Guzzle HTTP client, Vite + Tailwind 3.
@@ -75,8 +77,8 @@ PHPUnit, configured in [phpunit.xml](phpunit.xml). The suite covers the PIX flow
 ### Request/background flow
 
 ```
-Client system → POST /api/create-payment (Bearer token, middleware api.token)
-             → CheckoutController creates order via ApiService (provider v5 orders) → Payment row (PENDING)
+Client system → POST /api/create-payment (Bearer token, middleware api.token; optional payload `payment_methods`: pix | credit_card | both)
+             → CheckoutController creates order via ApiService (provider v5 orders; skipped for card-only → ide/qrCode NULL) → Payment row (PENDING)
              → responds { payment_link: APP_URL/checkout/{payment.id} }
 
 Payer opens /checkout/{id} → Livewire PaymentPage (polls every 5s while PENDING), tabs Pix | Cartão
