@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\Payment;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 class PaymentPage extends Component
@@ -17,6 +18,7 @@ class PaymentPage extends Component
         $this->payment = Payment::withoutGlobalScopes()->findOrFail($id);
     }
 
+    #[On('payment-updated')]
     public function atualizar()
     {
         $this->payment = Payment::withoutGlobalScopes()->findOrFail($this->id);

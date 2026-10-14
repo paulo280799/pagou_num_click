@@ -157,4 +157,24 @@ class ProcessWebhookTest extends TestCase
 
         Http::assertSent(fn ($request) => $request->header('X-Webhook-Secret')[0] === 'test-secret-123');
     }
+
+    public function test_unreachable_url_does_not_block_other_payments(): void
+    {
+        $account = Account::factory()->create();
+        $bad = Payment::factory()->paid()->create(['account_id' => $account->id, 'notification_url' => 'https://down.test/webhook', 'is_notified' => false]);
+        $good = Payment::factory()->paid()->create(['account_id' => $account->id, 'notification_url' => 'https://client.test/webhook', 'is_notified' => false]);
+
+        Http::fake([
+            'down.test/*' => fn () => throw new \Illuminate\Http\Client\ConnectionException('unreachable'),
+            'client.test/*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $this->artisan('app:process-webhook')->assertSuccessful();
+
+        $bad->refresh();
+        $this->assertFalse((bool) $bad->is_notified);
+        $this->assertSame(1, $bad->notification_attempts);
+        $this->assertNotNull($bad->last_notification_attempt);
+        $this->assertTrue((bool) $good->refresh()->is_notified);
+    }
 }

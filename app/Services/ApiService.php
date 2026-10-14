@@ -26,6 +26,19 @@ class ApiService
     }
 
 
+    public function create_card_order(array $body, string $idempotencyKey){
+         return Http::withBasicAuth($this->userIntegration, $this->passwordIntegration)
+            ->withHeaders(['Idempotency-Key' => $idempotencyKey])
+            ->timeout(config('integration.card_http_timeout'))
+            ->post("{$this->urlIntegration}/v5/orders", $body);
+    }
+
+    public function get_orders_by_code(string $code){
+         return Http::withBasicAuth($this->userIntegration, $this->passwordIntegration)
+            ->timeout(config('integration.card_http_timeout'))
+            ->get("{$this->urlIntegration}/v5/orders", ['code' => $code]);
+    }
+
     public function get_order(string $order_id){
          return Http::withBasicAuth($this->userIntegration, $this->passwordIntegration)
             ->get("{$this->urlIntegration}/v5/orders/{$order_id}");

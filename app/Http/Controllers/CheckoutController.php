@@ -70,8 +70,16 @@ class CheckoutController extends Controller
 
         $responseData = $response->json();
 
-        if (empty($responseData['charges'][0]['last_transaction']['qr_code_url'])) {
-            Log::error("Pedido {$responseData['id']} criado no provedor mas charge não retornou qr_code_url; resposta completa: ".json_encode($responseData));
+        if (data_get($responseData, 'charges.0.status') === 'failed'
+            || empty(data_get($responseData, 'charges.0.last_transaction.qr_code_url'))
+            || empty(data_get($responseData, 'charges.0.last_transaction.qr_code'))) {
+            Log::error('Pedido PIX sem QR code ou com charge failed no provedor; order='.data_get($responseData, 'id').' charge_status='.data_get($responseData, 'charges.0.status'));
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao processar pagamento',
+                'errors' => data_get($responseData, 'charges.0.last_transaction.gateway_response.errors', []),
+            ], 422);
         }
 
         $paymentMethodFromApi = $response['charges'][0]['payment_method'] ?? null;
@@ -94,6 +102,7 @@ class CheckoutController extends Controller
             'status' => ($paymentStatusEnum ?? StatusPaymentEnum::PENDING)->value,
 
             'refExternal' => $validated['refExternal'],
+            'customer' => $body['customer'],
 
             'duration' => $this->config->duration,
             'expirationDate' => $expirationDate,

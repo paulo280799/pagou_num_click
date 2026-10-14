@@ -10,10 +10,10 @@
         <div class="text-center">
             @if ($isFailed)
                 <div class="text-xl font-bold text-[#141413] mb-1.5">Pagamento recusado</div>
-                <div class="text-sm text-[#6B6A64] leading-tight max-w-[280px]">O pagamento não foi aprovado. Tente novamente ou utilize outro método.</div>
+                <div class="text-sm text-[#6B6A64] leading-tight max-w-[280px]">Não foi possível processar o pagamento. Tente novamente ou utilize outro método.</div>
             @else
                 <div class="text-xl font-bold text-[#141413] mb-1.5">Tempo esgotado</div>
-                <div class="text-sm text-[#6B6A64] leading-tight max-w-[280px]">O código Pix expirou antes da confirmação do pagamento. Gere um novo código para continuar.</div>
+                <div class="text-sm text-[#6B6A64] leading-tight max-w-[280px]">O prazo para pagar expirou antes da confirmação. Solicite um novo link à loja para continuar.</div>
             @endif
         </div>
     </div>

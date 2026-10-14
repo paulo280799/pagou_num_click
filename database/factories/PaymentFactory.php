@@ -48,4 +48,50 @@ class PaymentFactory extends Factory
             'expirationDate' => now()->subMinutes(5),
         ]);
     }
+
+    public function pending(): static
+    {
+        return $this->state(fn () => []);
+    }
+
+    public function withCustomer(): static
+    {
+        return $this->state(fn () => [
+            'customer' => [
+                'name' => 'Fulano de Tal',
+                'email' => 'fulano@example.com',
+                'type' => 'individual',
+                'document' => '12345678909',
+                'phones' => ['home_phone' => ['country_code' => '55', 'area_code' => '11', 'number' => '999999999']],
+            ],
+        ]);
+    }
+
+    public function cardPaid(): static
+    {
+        return $this->paid()->withCustomer()->state(fn () => [
+            'payment_method' => PaymentMethodEnum::CREDIT_CARD,
+            'card_order_id' => 'or_'.Str::random(10),
+            'card_brand' => 'Visa',
+            'card_last_four' => '1111',
+            'installments' => 1,
+        ]);
+    }
+
+    public function cardAttemptPending(): static
+    {
+        return $this->withCustomer()->state(fn () => [
+            'card_order_id' => 'or_'.Str::random(10),
+            'card_attempt_key' => (string) Str::uuid(),
+            'card_attempt_started_at' => now(),
+        ]);
+    }
+
+    public function cardTimedOut(): static
+    {
+        return $this->withCustomer()->state(fn () => [
+            'card_attempt_key' => (string) Str::uuid(),
+            'card_attempt_started_at' => now()->subMinutes(10),
+        ]);
+    }
 }

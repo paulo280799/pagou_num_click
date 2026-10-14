@@ -6,7 +6,7 @@
         </div>
         <div class="text-center">
             <div class="text-xl font-bold text-[#141413] mb-1.5">Pagamento confirmado!</div>
-            <div class="text-sm text-[#6B6A64] leading-tight max-w-[280px]">Recebemos seu Pix. Um recibo foi enviado para o seu e-mail.</div>
+            <div class="text-sm text-[#6B6A64] leading-tight max-w-[280px]">{{ $isCard ? 'Seu pagamento no cartão foi aprovado.' : 'Recebemos seu Pix.' }} Um recibo foi enviado para o seu e-mail.</div>
         </div>
     </div>
 
@@ -26,8 +26,13 @@
         <div class="flex justify-between text-[13px]">
             <span class="text-[#6B6A64]">Forma de pagamento</span>
             <span class="text-[#141413] flex items-center gap-1.5">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 4h6v6H4V4zm2 2v2h2V6H6zm8-2h6v6h-6V4zm2 2v2h2V6h-2zM4 14h6v6H4v-6zm2 2v2h2v-2H6zm10-2h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v2h-2v-2zm4 0h2v2h-2v-2z" fill="#00B389"/></svg>
-                Pix
+                @if ($isCard)
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#00B389" stroke-width="2"/><path d="M2 10h20" stroke="#00B389" stroke-width="2"/></svg>
+                    Cartão{{ $cardBrand ? ' '.$cardBrand : '' }}{{ $cardLastFour ? ' final '.$cardLastFour : '' }}{{ $installments && $installments > 1 ? ' · '.$installments.'x' : '' }}
+                @else
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 4h6v6H4V4zm2 2v2h2V6H6zm8-2h6v6h-6V4zm2 2v2h2V6h-2zM4 14h6v6H4v-6zm2 2v2h2v-2H6zm10-2h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v2h-2v-2zm4 0h2v2h-2v-2z" fill="#00B389"/></svg>
+                    Pix
+                @endif
             </span>
         </div>
     </div>
