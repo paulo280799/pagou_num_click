@@ -30,6 +30,8 @@ class CardPaymentController extends Controller
             abort_unless($p->status === StatusPaymentEnum::PENDING, 409);
             abort_if($p->expirationDate && Carbon::parse($p->expirationDate)->isPast(), 409);
             abort_if($p->customer === null, 409);
+            // checkout configurado só com PIX
+            abort_unless($p->allowsMethod('credit_card'), 409);
             // cartão em análise: aguardar o polling
             abort_if($p->card_order_id !== null && $p->card_attempt_key !== null, 409);
             // outra requisição em voo

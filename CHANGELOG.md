@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-14 (5)
+- `POST /api/create-payment`: novo campo opcional `payment_methods` (`pix`, `credit_card`; padrão ambos) que define o que o checkout mostra. Só-cartão não cria pedido PIX no provedor (`ide`/`qrCode`/`copyPaste` agora nullable; migration `add_payment_methods_to_payments_table` + coluna JSON `payment_methods`); só-Pix esconde a aba de cartão e `pay-card` responde 409; cartão pedido explicitamente sem `STONE_PUBLIC_KEY_INTEGRATION` → 422. Polling pula a consulta PIX quando `ide` é nulo.
+- Validação reforçada em `CheckoutRequest`: limites de tamanho, `amount` ≥ 0.01, CPF (11) / CNPJ (14) conforme `customer.type`, telefone só dígitos, `payment_methods` sem repetição; erros sempre em JSON 422 (antes redirect 302 sem `Accept: application/json`).
+- **Mudança de comportamento**: `items[].quantity` e todos os `items` agora são enviados e somados (antes só `items[0]` com quantidade 1).
+- Documentação: `docs/api/create-payment.md` e spec OpenAPI `docs/api/openapi.yaml`, servida com Swagger UI em `/api/docs` (`/api/docs/openapi.yaml`). `DOCUMENTACAO.md` §3/§4 e `CLAUDE.md` atualizados. Testes novos (meios de pagamento, validação, checkout só-cartão/só-Pix, polling, docs); suíte: 181 passando.
+
 ## 2026-10-14 (4)
 - Adicionado `docs/pagarme/cc/integration.md`: como a integração de cartão funciona hoje no código (mesmo padrão do `pix/integration.md`): visão geral, peças, tokenização, rota `pay-card` em 3 fases, mapeamento de resultado, idempotência, checkout, polling, ciclo de vida, config, segurança, comportamento no sandbox e limitações.
 

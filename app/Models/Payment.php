@@ -35,6 +35,7 @@ class Payment extends Model
         'amount',
 
         'payment_method',
+        'payment_methods',
         'refExternal',
         'status',
         'duration',
@@ -65,11 +66,18 @@ class Payment extends Model
     protected $casts = [
         'status' => StatusPaymentEnum::class,
         'payment_method' => PaymentMethodEnum::class,
+        'payment_methods' => 'array',
         'customer' => 'encrypted:array',
         'card_attempt_started_at' => 'datetime',
     ];
 
     protected $hidden = ['customer'];
+
+    /** Meios habilitados no checkout; payments legados (null) aceitam PIX e cartão. */
+    public function allowsMethod(string $method): bool
+    {
+        return in_array($method, $this->payment_methods ?? ['pix', 'credit_card'], true);
+    }
 
     public function markCardPaid(ChargeResult $result): void
     {

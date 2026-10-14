@@ -10,13 +10,13 @@ class PaymentStatusPending extends Component
 {
     public string $paymentId;
 
-    public string $qrCode;
+    public ?string $qrCode = null;
 
-    public string $copyPaste;
+    public ?string $copyPaste = null;
 
     public float $amount;
 
-    public function mount(string $paymentId, string $qrCode, string $copyPaste, float $amount)
+    public function mount(string $paymentId, ?string $qrCode, ?string $copyPaste, float $amount)
     {
         $this->paymentId = $paymentId;
         $this->qrCode = $qrCode;
@@ -38,9 +38,14 @@ class PaymentStatusPending extends Component
         $cardEnabled = $payment !== null
             && filled(config('integration.public_key'))
             && $payment->customer !== null
+            && $payment->allowsMethod('credit_card')
             && $payment->status === StatusPaymentEnum::PENDING;
 
+        // sem QR code (checkout só-cartão) ou PIX não habilitado: não há aba Pix
+        $pixEnabled = $payment === null || ($payment->allowsMethod('pix') && filled($this->qrCode));
+
         return view('livewire.payment-status-pending', [
+            'pixEnabled' => $pixEnabled,
             'cardEnabled' => $cardEnabled,
             // tentativa sem resultado definitivo (em análise ou timeout): chave gravada, com ou sem order id
             'cardInReview' => $cardEnabled && $payment->card_attempt_key !== null,

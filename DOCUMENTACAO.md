@@ -72,7 +72,7 @@ accounts 1───N payments
 **accounts** — `id (uuid)`, `name`.
 **users** — tabela padrão do Laravel + `account_id` (uuid, FK cascade).
 **configs** — `id`, `duration` (segundos de validade do PIX; coluna string, com cast inteiro no model), `notification_url`, `redirect_url`, `api_token`, `account_id`.
-**payments** — `id` (uuid, usado no link de checkout), `ide` (id do pedido no provedor), `refExternal` (referência do cliente), `qrCode` (URL da imagem), `copyPaste` (PIX copia-e-cola), `amount` (double, em reais), `status`, `payment_method`, `duration`, `expirationDate`, `paymentDate`, `redirect_url`, `notification_url`, `notification_attempts`, `last_notification_attempt`, `is_notified`, `account_id`.
+**payments** — `id` (uuid, usado no link de checkout), `ide` (id do pedido PIX no provedor; `NULL` em checkout só-cartão), `refExternal` (referência do cliente), `payment_methods` (JSON `["pix","credit_card"]`, meios habilitados no checkout; `NULL` = legado, aceita ambos), `qrCode` (URL da imagem; `NULL` em só-cartão), `copyPaste` (PIX copia-e-cola; `NULL` em só-cartão), `amount` (double, em reais), `status`, `payment_method`, `duration`, `expirationDate`, `paymentDate`, `redirect_url`, `notification_url`, `notification_attempts`, `last_notification_attempt`, `is_notified`, `account_id`.
 **payments — colunas de cartão** (todas nullable; nunca guardam PAN, CVV, validade, `card_token` nem endereço): `card_order_id` (pedido de cartão `or_...`; `ide` continua sendo o pedido PIX), `card_attempt_key` + `card_attempt_started_at` (tentativa em curso; a chave vira o header `Idempotency-Key`), `card_brand`, `card_last_four`, `installments`, `acquirer_tid`/`acquirer_nsu`/`acquirer_auth_code`, e `customer` (dados do cliente do `POST /api/create-payment`, `encrypted:array`, em `$hidden`; depende de `APP_KEY` estável).
 
 `Payment` copia `duration`, `redirect_url` e `notification_url` da `Config` no momento da criação (snapshot).
@@ -93,32 +93,36 @@ accounts 1───N payments
 ## 4. API pública
 
 ### `POST /api/create-payment`
+> Documentação completa do endpoint em [docs/api/create-payment.md](docs/api/create-payment.md); spec OpenAPI em [docs/api/openapi.yaml](docs/api/openapi.yaml), com Swagger UI em `GET /api/docs`.
+
 Headers: `Authorization: Bearer <api_token da Config>`.
 
-Corpo (validado por `CheckoutRequest`):
+Corpo (validado por `CheckoutRequest`; erro de validação é sempre JSON 422):
 ```json
 {
-  "refExternal": "pedido-123",              // único por conta
+  "refExternal": "pedido-123",              // único por conta, até 255
+  "payment_methods": ["pix", "credit_card"],// opcional; pix | credit_card | ambos (padrão: ambos)
   "items": [{ "amount": "10.50", "description": "Camiseta", "quantity": 1 }],
   "customer": {
     "name": "Fulano", "email": "f@x.com",
-    "type": "individual",                   // individual | corporation
-    "document": "123.456.789-00",           // máscara é removida
+    "type": "individual",                   // individual (CPF, 11 díg.) | corporation (CNPJ, 14 díg.)
+    "document": "123.456.789-09",           // máscara é removida
     "phones": { "home_phone": { "country_code": "55", "area_code": "11", "number": "999999999" } }
   }
 }
 ```
-- `amount` deve casar `^\d+(\.\d{1,2})?$` (reais, ponto decimal) e é convertido para centavos.
-- Só `items[0]` é enviado ao provedor; `quantity` é validado mas o envio é sempre `1`.
+- `amount`: preço unitário em reais, `^\d{1,9}(\.\d{1,2})?$`, mínimo `0.01`. O total é a soma de `amount × quantity` de todos os `items` (até 50).
+- `payment_methods` é gravado em `payments.payment_methods` (JSON; `null` em pagamentos legados = PIX + cartão). `["pix"]`: checkout só com Pix, `pay-card` responde 409. `["credit_card"]`: **nenhum pedido PIX** é criado (`ide`/`qrCode`/`copyPaste` ficam `NULL`), o checkout só mostra o formulário de cartão e o polling apenas cancela por expiração. `credit_card` pedido explicitamente sem `STONE_PUBLIC_KEY_INTEGRATION` → 422.
 
 Processamento (`CheckoutController::store`):
-1. Lê a `Config` da conta (`duration`).
-2. Calcula `expirationDate` (agora + duration, horário local) e `expires_at` do PIX enviado ao provedor (agora **+3h** + duration — compensa o fuso UTC-3 do Brasil).
-3. Chama `ApiService::create_order` com pagamento `pix`.
-4. Se o provedor falhar → devolve `{success:false, message, errors}` com o mesmo status HTTP.
-4b. Se o provedor responder 200 com `charges[0].status = failed` ou sem QR code → `422 {success:false, message, errors}` e **nenhum `Payment` é criado**.
-5. Cria `Payment` (status vindo do provedor, normalmente `PENDING`), guardando `ide`, `qrCode`, `copyPaste`, `amount` e `customer` (criptografado).
-6. Responde `201 {"payment_link": "<APP_URL>/checkout/<payment.id>"}`.
+1. Resolve `payment_methods` (padrão ambos). Cartão explícito sem chave pública → `422 {success:false, errors.payment_methods}`.
+2. Lê a `Config` da conta (`duration`) e calcula `expirationDate` (agora + duration, horário local).
+3. **Só cartão**: cria o `Payment` (`PENDING`, `payment_method = CREDIT_CARD`, `customer` criptografado) sem chamar o provedor e responde 201.
+4. **Com Pix**: calcula `expires_at` do PIX (agora **+3h** + duration — compensa o fuso UTC-3) e chama `ApiService::create_order` com pagamento `pix`.
+5. Se o provedor falhar → devolve `{success:false, message, errors}` com o mesmo status HTTP.
+5b. Se o provedor responder 200 com `charges[0].status = failed` ou sem QR code → `422 {success:false, message, errors}` e **nenhum `Payment` é criado**.
+6. Cria `Payment` (status vindo do provedor, normalmente `PENDING`), guardando `ide`, `qrCode`, `copyPaste`, `amount` e `customer` (criptografado).
+7. Responde `201 {"payment_link": "<APP_URL>/checkout/<payment.id>"}`.
 
 ### `POST /checkout/{id}/pay-card` (pública, usada pela página de checkout)
 Rota `web` (CSRF obrigatório, `X-CSRF-TOKEN`), com limiter dedicado `pay-card` (5 tentativas / 10 min por IP + `Payment.id`; o throttle global do grupo `web` continua desligado, ver §9).
