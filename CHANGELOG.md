@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-14 (4)
+- Adicionado `docs/pagarme/cc/integration.md`: como a integração de cartão funciona hoje no código (mesmo padrão do `pix/integration.md`): visão geral, peças, tokenização, rota `pay-card` em 3 fases, mapeamento de resultado, idempotência, checkout, polling, ciclo de vida, config, segurança, comportamento no sandbox e limitações.
+
 ## 2026-10-14 (3)
 - Documentação atualizada (Plano 4): `DOCUMENTACAO.md` (fluxo com cartão, colunas de cartão, rota `pay-card`, polling de cartão, webhook resiliente, env vars `STONE_PUBLIC_KEY_INTEGRATION`/`CARD_*`, §8 com itens 6, 10, 11, 12 e 16 resolvidos), `CLAUDE.md` (env vars, fluxo de cartão, testes) e `docs/pagarme/cc/doc.md` / `pix/integration.md` (status implementado, simulador oficial vs. observado, guarda de charge `failed`, `customer` persistido, `close_order`).
 
