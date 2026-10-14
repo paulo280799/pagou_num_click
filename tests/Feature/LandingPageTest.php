@@ -27,4 +27,19 @@ class LandingPageTest extends TestCase
 
         $this->get('/')->assertSee('href="https://wa.me/5511999999999"', false);
     }
+
+    public function test_landing_mentions_card_and_payment_methods(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('PIX e cartão')
+            ->assertSee('Cartão de crédito')
+            ->assertSee('payment_methods', false)
+            ->assertSee('credit_card', false);
+    }
+
+    public function test_landing_links_to_api_docs(): void
+    {
+        $this->get('/')->assertSee('href="'.route('api.docs').'"', false);
+    }
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Gere cobranças PIX por API, entregue um link de pagamento com QR Code e receba a confirmação por webhook.">
+<meta name="description" content="Gere cobranças por API, receba por PIX ou cartão de crédito num link de pagamento pronto e seja avisado por webhook.">
 <title>Pagou num Click</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -82,6 +82,19 @@ nav ul a:hover{color:var(--ink)}
 .timer{display:flex;justify-content:space-between;font-size:.82rem;color:var(--muted);margin-top:14px}
 .timer b{color:var(--ink);font-family:var(--mono);font-weight:500}
 
+/* abas e cartão do checkout de exemplo */
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--bg);border:1px solid var(--line);padding:4px;border-radius:10px;margin-top:16px}
+.tabs button{font:600 .82rem var(--body);padding:8px;border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.cardmock{display:grid;gap:10px;margin-top:18px}
+.cardmock[hidden]{display:none}
+.fld{border:1px solid var(--line);border-radius:10px;padding:9px 12px;display:grid;gap:2px}
+.fld small{font:500 .68rem var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.fld span{font:400 .88rem var(--mono)}
+.fld-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.paybtn{font:600 .92rem var(--body);background:var(--accent);color:#06251C;border-radius:10px;padding:12px;text-align:center}
+.safe{font-size:.76rem;color:var(--muted);text-align:center}
+
 /* seções */
 section{padding-block:84px}
 .band{background:var(--surface);border-block:1px solid var(--line)}
@@ -108,6 +121,7 @@ section{padding-block:84px}
 .split ul{list-style:none;padding:0;margin:22px 0 0;display:grid;gap:12px;color:var(--muted)}
 .split li{padding-left:26px;position:relative}
 .split li::before{content:"";position:absolute;left:0;top:.5em;width:12px;height:2px;background:var(--accent)}
+.split li code{font:500 .85em var(--mono);color:var(--accent-ink);background:var(--accent-soft);padding:1px 6px;border-radius:4px}
 .code{background:var(--code-bg);color:var(--code-fg);border-radius:14px;padding:22px;font:400 .84rem/1.7 var(--mono);overflow-x:auto;min-width:0}
 .code .c{color:#7C7D74}.code .k{color:#19D3A5}.code .s{color:#F3C58B}
 .code pre{margin:0}
@@ -173,22 +187,38 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
 
 <header class="hero" id="topo"><div class="wrap">
   <div>
-    <span class="eyebrow">Cobrança via PIX para sistemas</span>
+    <span class="eyebrow">Cobrança via PIX e cartão para sistemas</span>
     <h1>Seu sistema gera a cobrança. O cliente <em>paga num click.</em></h1>
-    <p class="lead">Uma chamada de API cria o PIX, entrega um link de pagamento com QR Code e avisa o seu sistema assim que o dinheiro cair. Sem montar tela de pagamento, sem consultar status manualmente.</p>
+    <p class="lead">Uma chamada de API cria a cobrança e entrega um link de pagamento onde o cliente paga com PIX ou cartão de crédito. Você avisa por onde quer receber e o seu sistema é notificado assim que o dinheiro cair. Sem montar tela de pagamento, sem consultar status manualmente.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="{{ $contactUrl }}">Quero contratar</a>
       <a class="btn btn-ghost" href="#integracao">Ver a integração</a>
     </div>
-    <div class="proof"><span>Pagamento via PIX</span><span>Webhook de confirmação</span><span>Painel para acompanhar</span></div>
+    <div class="proof"><span>PIX e cartão de crédito</span><span>Webhook de confirmação</span><span>Painel para acompanhar</span></div>
   </div>
 
   <div class="pay" aria-label="Exemplo da tela de pagamento">
     <div class="pay-top"><span>Pedido #4821</span><span class="pill">Aguardando pagamento</span></div>
     <div class="amount"><small>R$</small>149,90</div>
     <div class="desc">Plano Mensal · Loja Exemplo</div>
-    <div class="qr" id="qr" aria-hidden="true"></div>
-    <div class="copy"><span>00020126580014br.gov.bcb.pix0136a1b2c3d4-e5f6-7890</span><button type="button" id="copy-btn">Copiar</button></div>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tab-pix" aria-selected="true">Pix</button>
+      <button type="button" role="tab" id="tab-card" aria-selected="false">Cartão</button>
+    </div>
+    <div id="panel-pix">
+      <div class="qr" id="qr" aria-hidden="true"></div>
+      <div class="copy"><span>00020126580014br.gov.bcb.pix0136a1b2c3d4-e5f6-7890</span><button type="button" id="copy-btn">Copiar</button></div>
+    </div>
+    <div class="cardmock" id="panel-card" hidden aria-hidden="true">
+      <div class="fld"><small>Número do cartão</small><span>4000 0000 0000 0010</span></div>
+      <div class="fld-row">
+        <div class="fld"><small>Validade</small><span>12/30</span></div>
+        <div class="fld"><small>CVV</small><span>•••</span></div>
+      </div>
+      <div class="fld"><small>Parcelas</small><span>1x de R$ 149,90 sem juros</span></div>
+      <div class="paybtn">Pagar R$ 149,90</div>
+      <div class="safe">Os dados do cartão não passam pelo nosso servidor</div>
+    </div>
     <div class="timer"><span>Expira em</span><b id="timer">14:59</b></div>
   </div>
 </div></header>
@@ -200,9 +230,9 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
     <p>O fluxo roda sozinho. O seu sistema só faz a primeira chamada e recebe o resultado.</p>
   </div>
   <div class="flow">
-    <div><span class="n">ETAPA 1</span><h3>Cria a cobrança</h3><p>Seu sistema envia valor e dados do pagador para a API.</p></div>
+    <div><span class="n">ETAPA 1</span><h3>Cria a cobrança</h3><p>Seu sistema envia itens, dados do pagador e os meios de pagamento aceitos.</p></div>
     <div><span class="n">ETAPA 2</span><h3>Recebe o link</h3><p>A resposta traz o link de pagamento pronto para enviar ao cliente.</p></div>
-    <div><span class="n">ETAPA 3</span><h3>Cliente paga</h3><p>Ele abre o link, escaneia o QR Code ou copia o código PIX.</p></div>
+    <div><span class="n">ETAPA 3</span><h3>Cliente paga</h3><p>Ele abre o link e paga com PIX (QR Code ou copia e cola) ou com cartão de crédito.</p></div>
     <div><span class="n">ETAPA 4</span><h3>Você é avisado</h3><p>Ao confirmar, enviamos um webhook para o seu sistema.</p></div>
   </div>
 </div></section>
@@ -213,11 +243,14 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
     <h2>O que já vem pronto</h2>
   </div>
   <div class="feat">
-    <article><div class="ico">QR</div><h3>Página de pagamento pronta</h3><p>Link com QR Code e PIX copia e cola, que atualiza sozinho quando o pagamento é confirmado. Você não precisa desenvolver nenhuma tela.</p></article>
+    <article><div class="ico">QR</div><h3>Página de pagamento pronta</h3><p>Link com QR Code, PIX copia e cola e formulário de cartão, que atualiza sozinho quando o pagamento é confirmado. Você não precisa desenvolver nenhuma tela.</p></article>
+    <article><div class="ico">⇄</div><h3>PIX, cartão ou ambos</h3><p>Escolha por cobrança quais meios o cliente vê no checkout: só PIX, só cartão ou os dois.</p></article>
+    <article><div class="ico">CC</div><h3>Cartão de crédito</h3><p>Pagamento parcelado sem juros, com aprovação na hora. Os dados do cartão são tokenizados no navegador do cliente e não passam pelo nosso servidor.</p></article>
     <article><div class="ico">↻</div><h3>Webhook com reenvio</h3><p>Se o seu sistema estiver fora do ar, tentamos de novo em intervalos crescentes, até 5 vezes.</p></article>
-    <article><div class="ico">⏱</div><h3>Validade configurável</h3><p>Defina por quanto tempo o PIX fica válido. Cobranças vencidas são canceladas automaticamente.</p></article>
+    <article><div class="ico">⏱</div><h3>Validade configurável</h3><p>Defina por quanto tempo o checkout fica válido. Cobranças vencidas são canceladas automaticamente.</p></article>
     <article><div class="ico">→</div><h3>Redirecionamento</h3><p>Depois do pagamento, o cliente volta para a página que você escolher.</p></article>
     <article><div class="ico">▤</div><h3>Painel de acompanhamento</h3><p>Veja cobranças, status e valores recebidos em um só lugar, com resumo por período.</p></article>
+    <article><div class="ico">{ }</div><h3>Documentação interativa</h3><p>Referência da API em Swagger, com exemplos prontos para testar a criação de cobranças.</p></article>
   </div>
 </div></section>
 
@@ -228,18 +261,28 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
     <ul>
       <li>Autenticação por token exclusivo da sua conta.</li>
       <li>Retorno imediato com o link de pagamento.</li>
+      <li>Defina os meios aceitos em cada cobrança: <code>pix</code>, <code>credit_card</code> ou ambos.</li>
+      <li>Vários itens por cobrança, com validação dos dados antes de cobrar.</li>
       <li>Cada conta enxerga apenas as próprias cobranças.</li>
       <li>Notificação enviada para a URL que você configurar.</li>
     </ul>
+    <div class="cta-row"><a class="btn btn-ghost" href="{{ route('api.docs') }}">Ver documentação da API</a></div>
   </div>
   <div class="code"><pre><span class="c"># Criar uma cobrança</span>
 <span class="k">POST</span> /api/create-payment
 Authorization: Bearer <span class="s">seu_token</span>
 
 {
-  <span class="s">"amount"</span>: 149.90,
-  <span class="s">"description"</span>: <span class="s">"Plano Mensal"</span>,
-  <span class="s">"customer"</span>: { <span class="s">"name"</span>: <span class="s">"Maria Souza"</span> }
+  <span class="s">"refExternal"</span>: <span class="s">"pedido-4821"</span>,
+  <span class="s">"payment_methods"</span>: [<span class="s">"pix"</span>, <span class="s">"credit_card"</span>],
+  <span class="s">"items"</span>: [
+    {
+      <span class="s">"amount"</span>: <span class="s">"149.90"</span>,
+      <span class="s">"description"</span>: <span class="s">"Plano Mensal"</span>,
+      <span class="s">"quantity"</span>: 1
+    }
+  ],
+  <span class="s">"customer"</span>: { <span class="s">"name"</span>: <span class="s">"Maria Souza"</span>, … }
 }
 
 <span class="c"># Resposta</span>
@@ -256,7 +299,7 @@ Authorization: Bearer <span class="s">seu_token</span>
   </div>
   <div class="plans">
     <div class="plan"><h3>Início</h3><div class="price"><span class="tbd">Sob consulta</span></div>
-      <ul><li>Link de pagamento com PIX</li><li>Webhook de confirmação</li><li>Painel de acompanhamento</li></ul>
+      <ul><li>Link de pagamento com PIX e cartão</li><li>Webhook de confirmação</li><li>Painel de acompanhamento</li></ul>
       <a class="btn btn-ghost" href="{{ $contactUrl }}">Falar com a gente</a></div>
     <div class="plan hot"><h3>Negócio</h3><div class="price"><span class="tbd">Sob consulta</span></div>
       <ul><li>Tudo do Início</li><li>Validade e redirecionamento personalizados</li><li>Suporte prioritário</li></ul>
@@ -270,9 +313,11 @@ Authorization: Bearer <span class="s">seu_token</span>
 <section class="band" id="duvidas"><div class="wrap">
   <div class="head"><span class="eyebrow">Dúvidas</span><h2>Perguntas frequentes</h2></div>
   <div class="faq">
-    <details><summary>Preciso ter uma tela de pagamento no meu sistema?</summary><p>Não. A resposta da API já traz um link de pagamento hospedado por nós, com QR Code e código PIX copia e cola.</p></details>
+    <details><summary>Preciso ter uma tela de pagamento no meu sistema?</summary><p>Não. A resposta da API já traz um link de pagamento hospedado por nós, com QR Code, PIX copia e cola e formulário de cartão de crédito.</p></details>
+    <details><summary>Posso aceitar só PIX ou só cartão?</summary><p>Sim. Em cada cobrança você escolhe os meios de pagamento: só PIX, só cartão ou os dois. Sem informar, o cliente vê as duas opções.</p></details>
+    <details><summary>Os dados do cartão passam pelo servidor de vocês?</summary><p>Não. O cartão é tokenizado direto no navegador do cliente, e só o token é usado para concluir a cobrança. Número, validade e CVV não são armazenados.</p></details>
     <details><summary>Como sei que o cliente pagou?</summary><p>Enviamos um webhook para a URL cadastrada na sua conta assim que o status muda. Se a entrega falhar, tentamos novamente até 5 vezes.</p></details>
-    <details><summary>Por quanto tempo o PIX fica válido?</summary><p>Você define a validade nas configurações da conta. Passado o prazo, a cobrança é cancelada automaticamente.</p></details>
+    <details><summary>Por quanto tempo o link de pagamento fica válido?</summary><p>Você define a validade nas configurações da conta. Passado o prazo, a cobrança é cancelada automaticamente.</p></details>
     <details><summary>Posso acompanhar os pagamentos sem usar a API?</summary><p>Sim. O painel mostra todas as cobranças da sua conta, com status e valores.</p></details>
     <details><summary>Quais são as taxas?</summary><p>Dependem do plano e do volume de cobranças. Fale com a gente para receber a proposta.</p></details>
   </div>
@@ -280,7 +325,7 @@ Authorization: Bearer <span class="s">seu_token</span>
 
 <section id="contato"><div class="wrap">
   <div class="final">
-    <h2>Pronto para receber por PIX sem montar checkout?</h2>
+    <h2>Pronto para receber por PIX e cartão sem montar checkout?</h2>
     <p>Fale com a gente e libere sua conta. A integração leva poucas chamadas de API.</p>
     <a class="btn btn-primary" href="{{ $contactUrl }}">Quero contratar</a>
   </div>
@@ -304,6 +349,10 @@ Authorization: Bearer <span class="s">seu_token</span>
   el.innerHTML=h;
   var t=899,te=document.getElementById('timer');
   setInterval(function(){t=t>0?t-1:899;var m=String(Math.floor(t/60)).padStart(2,'0'),x=String(t%60).padStart(2,'0');te.textContent=m+':'+x},1000);
+  var tp=document.getElementById('tab-pix'),tc=document.getElementById('tab-card'),pp=document.getElementById('panel-pix'),pc=document.getElementById('panel-card');
+  function show(card){tp.setAttribute('aria-selected',!card);tc.setAttribute('aria-selected',card);pp.hidden=card;pc.hidden=!card;pc.setAttribute('aria-hidden',!card)}
+  tp.addEventListener('click',function(){show(false)});
+  tc.addEventListener('click',function(){show(true)});
   var b=document.getElementById('copy-btn');
   b.addEventListener('click',function(){
     var txt=b.parentNode.querySelector('span').textContent;
