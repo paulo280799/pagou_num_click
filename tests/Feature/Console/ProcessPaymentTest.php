@@ -127,4 +127,33 @@ class ProcessPaymentTest extends TestCase
         Http::assertNothingSent();
         $this->assertSame(StatusPaymentEnum::PAID, $payment->refresh()->status);
     }
+
+    public function test_provider_connection_failure_does_not_block_other_payments(): void
+    {
+        $account = Account::factory()->create();
+        $down = Payment::factory()->create(['account_id' => $account->id, 'ide' => 'order_down']);
+        $up = Payment::factory()->create(['account_id' => $account->id, 'ide' => 'order_up']);
+
+        Http::fake([
+            '*/v5/orders/order_down' => fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout'),
+            '*/v5/orders/order_up' => Http::response(['status' => 'paid'], 200),
+        ]);
+
+        $this->artisan('app:process-payment')->assertSuccessful();
+
+        $this->assertSame(StatusPaymentEnum::PENDING, $down->refresh()->status);
+        $this->assertSame(StatusPaymentEnum::PAID, $up->refresh()->status);
+    }
+
+    public function test_provider_server_error_leaves_payment_untouched(): void
+    {
+        $account = Account::factory()->create();
+        $payment = Payment::factory()->create(['account_id' => $account->id, 'ide' => 'order_1']);
+
+        Http::fake(['*/v5/orders/order_1' => Http::response('boom', 503)]);
+
+        $this->artisan('app:process-payment')->assertSuccessful();
+
+        $this->assertSame(StatusPaymentEnum::PENDING, $payment->refresh()->status);
+    }
 }

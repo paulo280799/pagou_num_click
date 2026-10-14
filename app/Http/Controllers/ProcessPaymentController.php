@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessPaymentController extends Controller
 {
-    function __construct(private Payment $payment, private ApiService $apiService) {}
+    public function __construct(private Payment $payment, private ApiService $apiService) {}
 
     public function index()
     {
@@ -23,58 +23,69 @@ class ProcessPaymentController extends Controller
             ->get();
 
         foreach ($payments as $payment) {
-            // Cartão primeiro: pode virar PAID (ou liberar nova tentativa) antes de decidir expiração.
-            if ($payment->card_order_id || $payment->card_attempt_key) {
-                $this->checkCardAttempt($payment);
-                $payment->refresh();
-
-                if ($payment->status !== StatusPaymentEnum::PENDING) {
-                    continue;
-                }
-
-                // Cartão ainda em análise: não cancelar por expiração.
-                if ($payment->card_order_id && $payment->card_attempt_key) {
-                    continue;
-                }
+            try {
+                $this->processPayment($payment);
+            } catch (ConnectionException $e) {
+                // provedor fora do ar não pode travar os demais pagamentos
+                Log::warning("Polling: falha de conexão com o provedor; payment={$payment->id}");
             }
-
-            if ($payment->expirationDate < now()) {
-                $payment->update(['status' => StatusPaymentEnum::CANCELED]);
-                continue;
-            }
-
-            $response = $this->apiService->get_order($payment->ide);
-
-            $paymentStatusFromApi = $response['status'] ?? null;
-
-            if (!$paymentStatusFromApi) {
-                // Se não houver status no retorno da API, pula para o próximo
-                continue;
-            }
-
-            $paymentStatusEnum = StatusPaymentEnum::tryFrom(strtoupper($paymentStatusFromApi));
-
-            if (!$paymentStatusEnum) {
-                // Status inválido ou desconhecido — você pode logar isso, se quiser
-                continue;
-            }
-
-            match ($paymentStatusEnum) {
-                StatusPaymentEnum::PAID => $payment->update([
-                    'status' => $paymentStatusEnum,
-                    'paymentDate' => now()
-                ]),
-
-                StatusPaymentEnum::FAILED,
-                StatusPaymentEnum::CANCELED => $payment->update([
-                    'status' => $paymentStatusEnum
-                ]),
-
-                default => null // Caso queira tratar PENDING_REFUND, REFUNDED, etc., adicione aqui
-            };
         }
 
         $this->watchOpenPixOfCardPayments();
+    }
+
+    private function processPayment(Payment $payment): void
+    {
+        // Cartão primeiro: pode virar PAID (ou liberar nova tentativa) antes de decidir expiração.
+        if ($payment->card_order_id || $payment->card_attempt_key) {
+            $this->checkCardAttempt($payment);
+            $payment->refresh();
+
+            if ($payment->status !== StatusPaymentEnum::PENDING) {
+                return;
+            }
+
+            // Cartão ainda em análise: não cancelar por expiração.
+            if ($payment->card_order_id && $payment->card_attempt_key) {
+                return;
+            }
+        }
+
+        if ($payment->expirationDate < now()) {
+            $payment->update(['status' => StatusPaymentEnum::CANCELED]);
+
+            return;
+        }
+
+        $response = $this->apiService->get_order($payment->ide);
+
+        $paymentStatusFromApi = $response['status'] ?? null;
+
+        if (! $paymentStatusFromApi) {
+            // Se não houver status no retorno da API, pula para o próximo
+            return;
+        }
+
+        $paymentStatusEnum = StatusPaymentEnum::tryFrom(strtoupper($paymentStatusFromApi));
+
+        if (! $paymentStatusEnum) {
+            // Status inválido ou desconhecido — você pode logar isso, se quiser
+            return;
+        }
+
+        match ($paymentStatusEnum) {
+            StatusPaymentEnum::PAID => $payment->update([
+                'status' => $paymentStatusEnum,
+                'paymentDate' => now(),
+            ]),
+
+            StatusPaymentEnum::FAILED,
+            StatusPaymentEnum::CANCELED => $payment->update([
+                'status' => $paymentStatusEnum,
+            ]),
+
+            default => null // Caso queira tratar PENDING_REFUND, REFUNDED, etc., adicione aqui
+        };
     }
 
     /**

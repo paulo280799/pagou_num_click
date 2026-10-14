@@ -86,6 +86,41 @@ class CreatePaymentTest extends TestCase
         $this->assertSame(0, Payment::withoutGlobalScopes()->count());
     }
 
+    public function test_failed_charge_with_http_200_returns_422_and_creates_no_payment(): void
+    {
+        $this->fakeAccountWithToken();
+        Http::fake(['*/v5/orders' => Http::response([
+            'id' => 'order_failed',
+            'status' => 'failed',
+            'charges' => [[
+                'status' => 'failed',
+                'payment_method' => 'pix',
+                'last_transaction' => ['gateway_response' => ['errors' => [['message' => 'action_forbidden |  | Erro no gateway']]]],
+            ]],
+        ], 200)]);
+
+        $response = $this->postJson('/api/create-payment', $this->validPayload(), [
+            'Authorization' => 'Bearer valid-token',
+        ]);
+
+        $response->assertStatus(422)->assertJson(['success' => false]);
+        $this->assertSame(0, Payment::withoutGlobalScopes()->count());
+    }
+
+    public function test_payment_stores_encrypted_customer_with_unmasked_document(): void
+    {
+        $this->fakeAccountWithToken();
+        Http::fake(['*/v5/orders' => Http::response($this->fakeProviderOrderResponse(), 200)]);
+
+        $this->postJson('/api/create-payment', $this->validPayload(), [
+            'Authorization' => 'Bearer valid-token',
+        ])->assertStatus(201)->assertExactJson(['payment_link' => config('app.url').'/checkout/'.Payment::withoutGlobalScopes()->first()->id]);
+
+        $payment = Payment::withoutGlobalScopes()->first();
+        $this->assertSame('12345678900', $payment->customer['document']);
+        $this->assertSame('fulano@example.test', $payment->customer['email']);
+    }
+
     public function test_unknown_status_from_provider_falls_back_to_pending(): void
     {
         $this->fakeAccountWithToken();

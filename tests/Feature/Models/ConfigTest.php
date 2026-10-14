@@ -85,4 +85,16 @@ class ConfigTest extends TestCase
         $this->assertSame(1, Config::count());
         $this->assertSame(2, Config::withoutGlobalScopes()->count());
     }
+
+    public function test_duration_is_cast_to_integer(): void
+    {
+        $account = Account::factory()->create();
+        $user = \App\Models\User::factory()->create(['account_id' => $account->id]);
+        $this->actingAs($user);
+
+        $config = Config::create(['duration' => '900', 'notification_url' => 'https://x.test', 'redirect_url' => 'https://y.test']);
+
+        $this->assertSame(900, $config->refresh()->duration);
+        $this->assertIsInt($config->duration);
+    }
 }

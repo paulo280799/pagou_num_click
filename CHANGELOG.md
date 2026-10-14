@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-14 (3)
+- Documentação atualizada (Plano 4): `DOCUMENTACAO.md` (fluxo com cartão, colunas de cartão, rota `pay-card`, polling de cartão, webhook resiliente, env vars `STONE_PUBLIC_KEY_INTEGRATION`/`CARD_*`, §8 com itens 6, 10, 11, 12 e 16 resolvidos), `CLAUDE.md` (env vars, fluxo de cartão, testes) e `docs/pagarme/cc/doc.md` / `pix/integration.md` (status implementado, simulador oficial vs. observado, guarda de charge `failed`, `customer` persistido, `close_order`).
+
+## 2026-10-14 (2)
+- Implementado Plano 4 (tasks 1–5): `ApiTokenMiddleware` responde 401 (não 500) para token de conta sem `User`; `ProcessPaymentController` captura `ConnectionException` por pagamento (extraído `processPayment()`) e `ApiService::get_order` ganha timeout; `app:process-payment` e `app:process-webhook` com `withoutOverlapping(1)`; `Config.duration` com cast inteiro; removido `dd()` de `ConfigResource`. Testes novos (middleware, polling com provedor fora do ar/5xx, scheduler, cast, polling só em `PENDING`, Telescope oculta cartão); suíte: 149 passando. Itens de segurança §8 2–4 e Pint dos arquivos antigos ficam fora (decisão padrão do plano).
+
+## 2026-10-14
+- Plano 4 reescrito como SDD em `.changes/checkout-v2/plano4/` (`plano4.md` movido, novos `proposal.md`, `design.md`, `tasks.md`): escopo atualizado para o que sobrou depois dos Planos 1–3 (lacunas de teste, resiliência do polling, `withoutOverlapping`, cast de `duration`, middleware sem `User`, validação final e docs). Itens de segurança §8 2–4 ficam sob decisão do usuário.
+- Testes novos em `CreatePaymentTest`: charge `failed` com HTTP 200 → 422 sem criar `Payment`, e `customer` criptografado com documento sem máscara (tarefas do Plano 2 que estavam marcadas como feitas sem teste). Suíte: 138 passando.
+
 ## 2026-10-12 (6)
 - Checkout de cartão: o aviso "Pagamento em análise" (formulário bloqueado) agora vale para qualquer tentativa sem resultado definitivo (`card_attempt_key` preenchida), inclusive timeout sem `card_order_id`; antes, após timeout e recarga, o formulário reabria e o pagador podia reenviar (seguro pela `Idempotency-Key`, mas confuso). `PaymentStatusPending` passa a fazer `wire:poll.5s` quando o cartão está habilitado, para o aviso sumir quando o polling resolve a tentativa. Testes novos; suíte: 136 passando.
 - Simulação de cartões no sandbox (`4000000000000010/28/36/44/51/69/77/93`): todos aprovaram nesta conta (o simulador não recusa o `…28` como diz a doc); o `…36` caiu em timeout na 1ª tentativa e o reenvio com a mesma `Idempotency-Key` devolveu o mesmo pedido (um único pedido na Pagar.me, sem cobrança dupla).

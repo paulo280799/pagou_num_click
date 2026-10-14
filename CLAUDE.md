@@ -44,7 +44,7 @@ npm install && npm run build            # or `npm run dev` for Vite HMR
 "
 ```
 
-Required project-specific env vars beyond Laravel defaults (see `docker-compose.yml` for the DB ones Sail expects — `DB_HOST=mysql`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`): `URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION` (payment provider — without real credentials, `/api/create-payment` will fail at the HTTP call to the provider with a connection error, but everything before that, auth, validation, DB write, is exercised and works), `WEBHOOK_SECRET`, `APP_URL`.
+Required project-specific env vars beyond Laravel defaults (see `docker-compose.yml` for the DB ones Sail expects — `DB_HOST=mysql`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`): `URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION` (payment provider — without real credentials, `/api/create-payment` will fail at the HTTP call to the provider with a connection error, but everything before that, auth, validation, DB write, is exercised and works), `WEBHOOK_SECRET`, `APP_URL`. Card payments additionally need `STONE_PUBLIC_KEY_INTEGRATION` (the `pk_...` public key exposed to the browser for tokenization; must be from the same environment as `USER_INTEGRATION`; without it the card tab does not render) and optionally `CARD_MAX_INSTALLMENTS` (12), `CARD_STATEMENT_DESCRIPTOR` (≤13 chars) and `CARD_HTTP_TIMEOUT` (15 s). `APP_KEY` must be stable: `payments.customer` is stored with `encrypted:array`.
 
 **Port 80 conflict**: if the host already has something bound to port 80 (e.g. a system Apache/nginx), Sail's `laravel.test` container will silently lose that port — `docker ps` shows the mapping, but the host service answers first and you'll get a misleading 404 instead of Laravel's response. Check with `ss -tlnp | grep ':80 '`; if occupied, set `APP_PORT=8080` (or any free port) in `.env` and match it in `APP_URL`, then `./vendor/bin/sail up -d` again to recreate the container with the new mapping.
 
@@ -57,11 +57,11 @@ Required project-specific env vars beyond Laravel defaults (see `docker-compose.
 ./vendor/bin/sail artisan schedule:work # runs app:process-payment / app:process-webhook every 10s locally
 ```
 
-Filament admin panel: `/admin/login`. The Filament `ConfigResource` create form will currently throw (see `Config::boot` bug in Known Issues below) — if you need a `Config`/`api_token` for a test account, create it via tinker instead of the panel until that's fixed.
+Filament admin panel: `/admin/login`. If you need a `Config`/`api_token` for a test account, tinker is the reliable way (the panel's singleton create form may misbehave).
 
 ## Tests
 
-PHPUnit, configured in [phpunit.xml](phpunit.xml). Only the default Laravel example tests exist today — no coverage of the payment flow.
+PHPUnit, configured in [phpunit.xml](phpunit.xml). The suite covers the PIX flow, the card flow (`CardPaymentTest`, `ChargeResultTest`, `ProcessCardPaymentTest`, `CardCheckoutTest`), polling, webhook, middleware, scheduler and Livewire components; card/provider tests use `Http::fake` with fake `token_...` values (never put a real card number in fixtures).
 
 ```bash
 ./vendor/bin/sail artisan test                                  # full suite
@@ -79,12 +79,18 @@ Client system → POST /api/create-payment (Bearer token, middleware api.token)
              → CheckoutController creates order via ApiService (provider v5 orders) → Payment row (PENDING)
              → responds { payment_link: APP_URL/checkout/{payment.id} }
 
-Payer opens /checkout/{id} → Livewire PaymentPage (polls every 5s)
+Payer opens /checkout/{id} → Livewire PaymentPage (polls every 5s while PENDING), tabs Pix | Cartão
+  Card tab: Alpine form inside wire:ignore (card data never touches Livewire/Laravel)
+    → browser tokenizes at api.pagar.me/core/v5/tokens (public key) → card_token (1 min, single use)
+    → POST /checkout/{id}/pay-card (web route, CSRF, throttle:pay-card)
+    → CardPaymentController: lock + Idempotency-Key → POST /v5/orders (credit_card) → ChargeResult → PAID | declined 422 | processing 202/503
 
-Scheduler (every 10s, app/Console/Kernel.php):
-  app:process-payment  → ProcessPaymentController: polls provider for each PENDING payment, updates status (or CANCELED if expired)
+Scheduler (every 10s, withoutOverlapping, app/Console/Kernel.php):
+  app:process-payment  → ProcessPaymentController: for each PENDING payment first resolves any card attempt in progress (get_order / lookup by code), then polls the PIX order and updates status (or CANCELED if expired; never while a card attempt is unresolved); also watches the open PIX of card-paid payments until expiry+5min and logs an error if it gets paid (manual refund)
   app:process-webhook  → WebhookController: for payments with is_notified=false and status != PENDING, POSTs to notification_url with backoff [60s, 5m, 10m, 30m, 1h], gives up after 5 attempts
 ```
+
+The card flow is a second attempt on the existing `Payment` (the PIX order stays the `ide`; the card order is `card_order_id`); the pending PIX cannot be canceled at the provider, it only expires. The amount charged is always read from the `Payment`, never from the request. `close_order` is intentionally unused. Provider failures come back as HTTP 200 with `charges[0].status = failed`, so never assume a 2xx means success: read `charges[0].last_transaction.status` via `ChargeResult`.
 
 Console commands in `app/Console/Commands/` are thin — they only delegate to the controllers above, which hold the actual logic.
 
@@ -118,6 +124,6 @@ Registration is disabled (the `Register` page/class that creates `Account` + `Us
 
 ## Known issues to be aware of
 
-DOCUMENTACAO.md §8 lists open issues found during a code review — notably: `PaymentTimer` Livewire component exposes a public `cancelar()` and public `expirationDate`, letting any payer cancel their own charge client-side (and a locally-canceled payment is no longer polled, so a PIX paid afterward is never recognized); `AccountResource` has no tenant scope; `api_token` is stored and displayed in plaintext; `Config::boot` has a variable-name bug (`$model->api_token` instead of `$item`) that makes the empty-token check always true. Check that section before "fixing" related behavior, since some of these may be intentional follow-up work rather than this-task scope.
+DOCUMENTACAO.md §8 lists open issues found during a code review — notably: `PaymentTimer` Livewire component exposes a public `cancelar()` and public `expirationDate`, letting any payer cancel their own charge client-side (and a locally-canceled payment is no longer polled, so a PIX paid afterward is never recognized); `AccountResource` has no tenant scope; `api_token` is stored and displayed in plaintext; (the `Config::boot` token bug, the `duration` cast, the `ApiTokenMiddleware` 500 and the `withoutOverlapping` item are fixed). Check that section before "fixing" related behavior, since some of these may be intentional follow-up work rather than this-task scope.
 
 `routes/web.php`'s `/checkout/{id}` throttle and the `web` middleware group's global throttle were removed (see DOCUMENTACAO.md §9) because they shared a rate-limit counter keyed by IP+domain with Livewire's polling requests, causing legitimate payers to get HTTP 429. `TrustProxies` is configured with Cloudflare's IP ranges specifically (not `*`) so `$request->ip()` resolves correctly behind Cloudflare without allowing IP spoofing via `X-Forwarded-For`.

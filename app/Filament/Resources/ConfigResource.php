@@ -38,7 +38,6 @@ class ConfigResource extends Resource
 
         try {
             $config = Config::first();
-            dd($config);
         } catch (ModelNotFoundException $e) {
             throw new RuntimeException('Associated account not found');
         }

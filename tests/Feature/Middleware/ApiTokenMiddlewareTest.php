@@ -64,4 +64,14 @@ class ApiTokenMiddlewareTest extends TestCase
         $response->assertStatus(201);
         $this->assertAuthenticatedAs($user);
     }
+
+    public function test_valid_token_of_account_without_users_is_unauthorized(): void
+    {
+        $account = Account::factory()->create();
+        Config::factory()->create(['account_id' => $account->id, 'api_token' => 'orphan-token', 'duration' => '900']);
+
+        $this->postJson('/api/create-payment', [], ['Authorization' => 'Bearer orphan-token'])
+            ->assertStatus(401)
+            ->assertJson(['error' => 'Unauthorized']);
+    }
 }
