@@ -21,6 +21,10 @@ class Config extends Model
         'account_id',
     ];
 
+    protected $casts = [
+        'duration' => 'integer',
+    ];
+
     protected static function boot()
     {
         parent::boot();

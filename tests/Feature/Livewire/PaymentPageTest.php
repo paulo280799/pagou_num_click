@@ -43,4 +43,25 @@ class PaymentPageTest extends TestCase
 
         $this->assertSame(StatusPaymentEnum::PAID, $component->get('payment')->status);
     }
+
+    /** @dataProvider terminalStatuses */
+    public function test_polling_only_runs_while_pending(StatusPaymentEnum $status, bool $polls): void
+    {
+        $account = Account::factory()->create();
+        $payment = Payment::factory()->create(['account_id' => $account->id, 'status' => $status]);
+
+        $html = $this->get("/checkout/{$payment->id}")->assertOk()->getContent();
+
+        $this->assertSame($polls, str_contains($html, 'wire:poll.5s="atualizar"'));
+    }
+
+    public static function terminalStatuses(): array
+    {
+        return [
+            'pending' => [StatusPaymentEnum::PENDING, true],
+            'paid' => [StatusPaymentEnum::PAID, false],
+            'failed' => [StatusPaymentEnum::FAILED, false],
+            'canceled' => [StatusPaymentEnum::CANCELED, false],
+        ];
+    }
 }
