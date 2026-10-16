@@ -18,6 +18,8 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Filament\Navigation\MenuItem;
+use Filament\View\PanelsRenderHook;
+use Illuminate\Support\HtmlString;
 
 use App\Filament\Pages\Auth\Register;
 
@@ -36,8 +38,14 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->breadcrumbs(false)
             ->globalSearch(false)
+            // o painel só carrega o CSS do Filament (sem tema próprio), então ajustes de layout entram inline.
+            // Abas da lista de pagamentos: à esquerda (o Filament as centraliza com mx-auto) e coladas na tabela.
+            ->renderHook(PanelsRenderHook::STYLES_AFTER, fn () => new HtmlString(
+                '<style>.fi-resource-payments .fi-tabs{margin-left:0;margin-right:auto;margin-bottom:-0.75rem}</style>'
+            ))
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
+            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
 
             ->userMenuItems([
                 'telescope' => MenuItem::make()

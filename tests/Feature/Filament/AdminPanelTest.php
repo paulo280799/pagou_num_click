@@ -36,6 +36,15 @@ class AdminPanelTest extends TestCase
             ->assertOk();
     }
 
+    public function test_payments_tabs_are_left_aligned_via_panel_style(): void
+    {
+        $user = User::factory()->create(['account_id' => Account::factory()->create()->id]);
+
+        $this->actingAs($user)
+            ->get('/admin/payments')
+            ->assertSee('.fi-resource-payments .fi-tabs{margin-left:0;margin-right:auto', false);
+    }
+
     public function test_payment_view_action_opens_without_error(): void
     {
         $account = Account::factory()->create();

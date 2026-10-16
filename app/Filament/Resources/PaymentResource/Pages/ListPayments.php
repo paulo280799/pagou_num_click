@@ -9,7 +9,6 @@ use App\Enums\StatusPaymentEnum;
 use App\Models\Payment;
 use Filament\Resources\Components\Tab;
 use Illuminate\Database\Eloquent\Builder;
-use App\Filament\Resources\WidgetsResource\Widgets\PagamentosResumoStats;
 
 class ListPayments extends ListRecords
 {
@@ -19,13 +18,6 @@ class ListPayments extends ListRecords
     {
         return [
             Actions\CreateAction::make(),
-        ];
-    }
-
-    protected function getHeaderWidgets(): array
-    {
-        return [
-            PagamentosResumoStats::class,
         ];
     }
 
