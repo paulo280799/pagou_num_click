@@ -8,6 +8,7 @@ use App\Models\Scopes\UserScope;
 use App\Support\ChargeResult;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -86,6 +87,19 @@ class Payment extends Model
 
     /** Tarifa histórica do Pix, antes de ser configurável por conta (pagamentos PAGOS sem snapshot). */
     public const LEGACY_PIX_FEE_PERCENT = 0.75;
+
+    /**
+     * Receita líquida (valor − tarifa) dos pagamentos PAGOS da query: usa o `fee_amount` gravado em cada um;
+     * sem snapshot, Pix legado usa 0,75 % e cartão não tem tarifa.
+     */
+    public static function netRevenue(Builder $query): float
+    {
+        $legacyPix = self::LEGACY_PIX_FEE_PERCENT / 100;
+
+        return (float) $query->where('status', StatusPaymentEnum::PAID)
+            ->selectRaw("SUM(amount - COALESCE(fee_amount, CASE WHEN payment_method = 'PIX' THEN ROUND(amount * {$legacyPix}, 2) ELSE 0 END)) as net")
+            ->value('net');
+    }
 
     private function accountConfig(): ?Config
     {

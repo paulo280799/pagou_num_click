@@ -122,7 +122,7 @@ Status/method/type are backed by enums in `app/Enums/` (`StatusPaymentEnum`, `Pa
 
 ### Filament panel (`/admin`)
 
-Registration is disabled (the `Register` page/class that creates `Account` + `User` is commented out), so the first account/user must be created via `tinker`. `AccountResource` and `ConfigResource` follow a "singleton" pattern — `/create` redirects to `/edit` if the record already exists. `PaymentResource` is read-only with a 0.75% processing-fee calculation duplicated across the infolist and two dashboard widgets (`PagamentosStats`, `PagamentosResumoStats`).
+Registration is disabled (the `Register` page/class that creates `Account` + `User` is commented out), so the first account/user must be created via `tinker`. `AccountResource` and `ConfigResource` follow a "singleton" pattern — `/create` redirects to `/edit` if the record already exists. `PaymentResource` is read-only. The panel home is the `Dashboard` page (period filter + `DashboardStats` / `DashboardChart` / `DashboardStatusStats` widgets in `app/Filament/Widgets/`, registered via `discoverWidgets`); net revenue = `Payment::netRevenue()`.
 
 ## Known issues to be aware of
 

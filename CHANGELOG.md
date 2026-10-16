@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-16 (11)
+- Lista de Pagamentos: abas de status alinhadas à esquerda (o Filament as centraliza com `mx-auto`) e mais coladas na tabela, via `<style>` no render hook `STYLES_AFTER` do `AdminPanelProvider` (o painel não tem tema próprio, então classes Tailwind avulsas não existem). Teste em `AdminPanelTest`.
+
+## 2026-10-16 (10)
+- Lista de Pagamentos sem os cards de receita líquida (hoje/semana/mês/ano): o Dashboard e seu filtro de período cobrem isso. A **receita líquida** passou para o Dashboard, na descrição de "Cobranças autorizadas" ("N pagas · líquido R$ x"), calculada por `Payment::netRevenue()` (mesma regra de antes). Removidos `PagamentosResumoStats`, `PagamentosStats` (já sem uso) e `WidgetsTest`; o teste do líquido foi para `DashboardTest`. Suíte: 249 passando.
+
+## 2026-10-16 (9)
+- **Dashboard → Baixar relatório**: botão ao lado do filtro de período; baixa um CSV (`;`, UTF-8 com BOM, abre direto no Excel pt-BR) com os pagamentos do período selecionado e da conta logada: referência, ID, meio, valor, status, tarifa (% e R$), líquido, criado em e pago em. Tarifa/líquido só nos pagos; dados do cliente ficam de fora (PII); referência que começa com `=`, `+`, `-` ou `@` ganha `'` (injeção de fórmula). Novos: `Support/PaymentsReport`, view `dashboard-download-button`; `PaymentResource::paymentMethodShort` virou público. Suíte: 251 passando.
+
+## 2026-10-16 (8)
+- **Dashboard** como tela inicial do painel (`/admin`) e novo item **Dashboard** no topo do menu (o ícone de casa passou a ser de Pagamentos: `banknotes`). Filtro de período (Hoje, 7/30 dias, mês, ano); cards Cobranças criadas / autorizadas / Número de cobranças / Ticket médio; gráfico de linha com dropdown TPV ou nº de cobranças (hora no "Hoje", dia nos demais, mês no ano); cards por status (Pago, Pendente, Cancelado, Falha) com valor, quantidade e %. Novos: `Pages/Dashboard`, `Widgets/Dashboard{Stats,Chart,StatusStats}`, `DashboardPeriodEnum`; testes em `DashboardTest`. Widgets registrados no painel (`discoverWidgets` em `Filament/Widgets`; sem isso o Livewire dava "Unable to find component") e coberto por teste. Gráfico: opções do eixo Y passadas como `RawJs` inteiro (aninhado em array virava `{}` e o gráfico ficava em branco). Suíte: 250 passando.
+
 ## 2026-10-16 (7)
 - **Pagamentos (lista)**: tudo em português; colunas referência (pesquisável, ID curto embaixo), meio ("Pix", "Cartão · 3x", "Pix ou cartão"), valor (formato pt-BR), status em badge e criado em (`d/m/Y H:i`); abas Todos/Aguardando/Pagos/Cancelados com contagem; filtros por meio, período e faixa de valor; ação "Copiar link" do checkout nos pendentes (o copiar do ID passou a copiar a referência). O widget de contagens (`PagamentosStats`) saiu da lista, já que as abas mostram os números; fica só a receita líquida (a classe e o teste continuam).
 - **Pagamentos (detalhes)**: modal "Pagamento {referência}" com cabeçalho (status, valor, referência, id), seções Pagamento, Valores, **Cliente** (nome, e-mail, documento mascarado `***.456.789-**`) e Dados técnicos recolhida (IDs do provedor, TID/NSU/autorização). "Data Pagameto" corrigido para "Pago em" (só aparece quando pago); "Expira em" nos pendentes; botão "Fechar". Testes novos em `PaymentsPageTest`; suíte: 237 passando. Webhook/reenvio ficaram para depois.

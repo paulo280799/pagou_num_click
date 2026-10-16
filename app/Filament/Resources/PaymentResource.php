@@ -25,7 +25,7 @@ class PaymentResource extends Resource
 {
     protected static ?string $model = Payment::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-home';
+    protected static ?string $navigationIcon = 'heroicon-o-banknotes';
 
     protected static ?int $navigationSort = 1;
 
@@ -267,7 +267,7 @@ class PaymentResource extends Resource
     }
 
     /** Rótulo curto do meio de pagamento para a lista. */
-    private static function paymentMethodShort(Payment $record): string
+    public static function paymentMethodShort(Payment $record): string
     {
         if (static::isCardPaid($record)) {
             $n = max(1, (int) $record->installments);
