@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-16 (12)
+- **Landing**: nova seção "Painel" (`#painel`, link no menu) com um dashboard de exemplo em HTML/CSS/SVG (valores fictícios, tema claro/escuro, empilha no mobile) e a lista do que o painel entrega (dashboard por período, gráfico, status, relatório CSV, lista de pagamentos). Atualizados: item do hero ("Painel e relatórios"), card de recursos ("Dashboard e relatório"), plano Início e resposta do FAQ sobre acompanhar sem API. Faixas (`band`) realternadas para manter o ritmo visual. Teste em `LandingPageTest`.
+
 ## 2026-10-16 (11)
 - Lista de Pagamentos: abas de status alinhadas à esquerda (o Filament as centraliza com `mx-auto`) e mais coladas na tabela, via `<style>` no render hook `STYLES_AFTER` do `AdminPanelProvider` (o painel não tem tema próprio, então classes Tailwind avulsas não existem). Teste em `AdminPanelTest`.
 
