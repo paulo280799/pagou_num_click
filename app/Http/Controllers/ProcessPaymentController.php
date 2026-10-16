@@ -79,7 +79,7 @@ class ProcessPaymentController extends Controller
         }
 
         match ($paymentStatusEnum) {
-            StatusPaymentEnum::PAID => $payment->update([
+            StatusPaymentEnum::PAID => $payment->update($payment->feeAttributesFor(PaymentMethodEnum::PIX) + [
                 'status' => $paymentStatusEnum,
                 'paymentDate' => now(),
             ]),

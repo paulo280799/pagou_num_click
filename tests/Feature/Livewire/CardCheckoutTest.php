@@ -156,4 +156,25 @@ class CardCheckoutTest extends TestCase
             ->assertDontSee('Pagar com Pix')
             ->assertSee("tab: 'card'", false);
     }
+
+    public function test_installment_select_uses_snapshot_limit(): void
+    {
+        $p = $this->make('withCustomer', ['max_installments' => 6]);
+
+        $this->get("/checkout/{$p->id}")->assertOk()->assertSee('maxInstallments\\u0022:6', false)->assertSee('Parcelas');
+    }
+
+    public function test_installment_select_hidden_when_installments_disabled(): void
+    {
+        $p = $this->make('withCustomer', ['max_installments' => 1]);
+
+        $this->get("/checkout/{$p->id}")->assertOk()->assertSee('maxInstallments\\u0022:1', false)->assertDontSee('Parcelas');
+    }
+
+    public function test_legacy_payment_without_snapshot_keeps_twelve(): void
+    {
+        $p = $this->make();
+
+        $this->get("/checkout/{$p->id}")->assertOk()->assertSee('maxInstallments\\u0022:12', false);
+    }
 }

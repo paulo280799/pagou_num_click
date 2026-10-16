@@ -66,6 +66,7 @@ class CheckoutController extends Controller
             'refExternal' => $validated['refExternal'],
             'customer' => $customer,
             'payment_methods' => $methods,
+            'max_installments' => $this->config->effectiveMaxInstallments(),
             'duration' => $this->config->duration,
             'expirationDate' => $expirationDate,
             'redirect_url' => $this->config->redirect_url,

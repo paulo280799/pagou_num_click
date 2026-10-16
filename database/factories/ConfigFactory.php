@@ -18,6 +18,8 @@ class ConfigFactory extends Factory
             'duration' => '900',
             'notification_url' => fake()->url(),
             'redirect_url' => fake()->url(),
+            'card_installments_enabled' => true,
+            'card_max_installments' => 12,
             'api_token' => Str::random(30),
             'account_id' => Account::factory(),
         ];

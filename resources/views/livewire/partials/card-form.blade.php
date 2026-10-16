@@ -37,13 +37,16 @@
                 </label>
             </div>
 
-            <label class="flex flex-col gap-1 text-[13px] font-semibold text-[#141413]">Parcelas
-                <select x-model="installments" class="w-full rounded-xl border border-[#E8E6DF] px-3.5 py-3 text-[15px] font-normal bg-white">
-                    <template x-for="o in installmentOptions()" :key="o.n">
-                        <option :value="o.n" x-text="o.label"></option>
-                    </template>
-                </select>
-            </label>
+            {{-- parcelamento desligado na Config (limite 1): sem seletor, cobra à vista --}}
+            @if ($cardConfig['maxInstallments'] > 1)
+                <label class="flex flex-col gap-1 text-[13px] font-semibold text-[#141413]">Parcelas
+                    <select x-model="installments" class="w-full rounded-xl border border-[#E8E6DF] px-3.5 py-3 text-[15px] font-normal bg-white">
+                        <template x-for="o in installmentOptions()" :key="o.n">
+                            <option :value="o.n" x-text="o.label"></option>
+                        </template>
+                    </select>
+                </label>
+            @endif
 
             <div class="text-[13px] font-semibold text-[#141413] pt-1">Endereço de cobrança</div>
 

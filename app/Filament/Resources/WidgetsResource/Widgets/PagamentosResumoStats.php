@@ -46,8 +46,11 @@ class PagamentosResumoStats extends BaseWidget
             'ano' => $query->whereYear('created_at', Carbon::now()->year),
         };
 
-        $total = $query->sum('amount');
-        $liquido = $total - ($total * 0.0075);
+        // líquido = valor - tarifa gravada no pagamento; sem snapshot, Pix legado usa 0,75% e cartão não tem tarifa
+        $legacyPix = Payment::LEGACY_PIX_FEE_PERCENT / 100;
+        $liquido = (float) $query
+            ->selectRaw("SUM(amount - COALESCE(fee_amount, CASE WHEN payment_method = 'PIX' THEN ROUND(amount * {$legacyPix}, 2) ELSE 0 END)) as net")
+            ->value('net');
 
         return 'R$ ' . number_format($liquido, 2, ',', '.');
     }

@@ -29,6 +29,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->brandName(fn () => auth()->user()?->account?->name ?? config('app.name'))
             //->registration(Register::class)
             ->colors([
                 'primary' => Color::Amber,

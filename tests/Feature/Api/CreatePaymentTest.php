@@ -419,4 +419,27 @@ class CreatePaymentTest extends TestCase
             'phones' => ['home_phone' => ['country_code' => '55', 'area_code' => '21', 'number' => '33334444']],
         ]])->assertStatus(201);
     }
+
+    public function test_payment_snapshots_installment_limit_from_config(): void
+    {
+        $account = $this->fakeAccountWithToken();
+        Config::withoutGlobalScopes()->where('account_id', $account->id)->update(['card_max_installments' => 6]);
+        Http::fake(['*/v5/orders' => Http::response($this->fakeProviderOrderResponse(), 200)]);
+
+        $this->createPayment()->assertStatus(201);
+
+        $this->assertSame(6, Payment::withoutGlobalScopes()->first()->max_installments);
+    }
+
+    public function test_payment_snapshot_is_one_when_installments_disabled(): void
+    {
+        config(['integration.public_key' => 'pk_test_abc123']);
+        $account = $this->fakeAccountWithToken();
+        Config::withoutGlobalScopes()->where('account_id', $account->id)->update(['card_installments_enabled' => false, 'card_max_installments' => 6]);
+        Http::fake();
+
+        $this->createPayment(['payment_methods' => ['credit_card']])->assertStatus(201);
+
+        $this->assertSame(1, Payment::withoutGlobalScopes()->first()->max_installments);
+    }
 }

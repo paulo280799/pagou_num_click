@@ -51,7 +51,7 @@ class PaymentStatusPending extends Component
             'cardInReview' => $cardEnabled && $payment->card_attempt_key !== null,
             'cardConfig' => [
                 'publicKey' => config('integration.public_key'),
-                'maxInstallments' => max(1, (int) config('integration.card_max_installments')),
+                'maxInstallments' => $payment?->installmentLimit() ?? 1,
                 'amountCents' => (int) round($this->amount * 100),
                 'payUrl' => route('checkout.pay-card', $this->paymentId),
                 'tokenUrl' => 'https://api.pagar.me/core/v5/tokens',

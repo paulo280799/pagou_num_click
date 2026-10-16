@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-10-16 (7)
+- **Pagamentos (lista)**: tudo em português; colunas referência (pesquisável, ID curto embaixo), meio ("Pix", "Cartão · 3x", "Pix ou cartão"), valor (formato pt-BR), status em badge e criado em (`d/m/Y H:i`); abas Todos/Aguardando/Pagos/Cancelados com contagem; filtros por meio, período e faixa de valor; ação "Copiar link" do checkout nos pendentes (o copiar do ID passou a copiar a referência). O widget de contagens (`PagamentosStats`) saiu da lista, já que as abas mostram os números; fica só a receita líquida (a classe e o teste continuam).
+- **Pagamentos (detalhes)**: modal "Pagamento {referência}" com cabeçalho (status, valor, referência, id), seções Pagamento, Valores, **Cliente** (nome, e-mail, documento mascarado `***.456.789-**`) e Dados técnicos recolhida (IDs do provedor, TID/NSU/autorização). "Data Pagameto" corrigido para "Pago em" (só aparece quando pago); "Expira em" nos pendentes; botão "Fechar". Testes novos em `PaymentsPageTest`; suíte: 237 passando. Webhook/reenvio ficaram para depois.
+
+## 2026-10-16 (6)
+- "Regenerar token da API" saiu do menu Segurança de Minha conta e foi para o cabeçalho da seção **Integração** em Configurações (botão ao lado do token; confirmação, o campo já mostra o token novo). O menu Segurança virou só o botão "Alterar minha senha". Teste movido para `AdminPanelTest`; suíte: 228 passando.
+
+## 2026-10-16 (5)
+- Painel: o nome no topo do menu lateral passou a ser o **nome da conta** do usuário logado (`brandName` dinâmico no `AdminPanelProvider`); na tela de login, sem usuário, continua o nome da aplicação.
+
+## 2026-10-16 (4)
+- "Minha conta": removida a seção "Resumo" (id, criada em, nº de usuários); a lista de usuários já mostra a contagem.
+
+## 2026-10-16 (3)
+- "Minha conta": campo Telefone com máscara dinâmica `(99) 9999-9999` / `(99) 99999-9999` (alterna conforme o nº de dígitos) e formatado ao carregar; continua gravado só com dígitos.
+
+## 2026-10-16 (2)
+- "Accounts" virou **Minha conta**: seção "Dados da conta" (nome, razão social, CPF/CNPJ, telefone, e-mail de contato; documento e telefone guardados só com dígitos e validados por tamanho) e "Resumo" (id, criada em, nº de usuários). Migration `add_profile_fields_to_accounts_table` (4 colunas nullable em `accounts`).
+- Nova tabela de **Usuários** da conta na própria página (criar, editar com senha opcional, remover; bloqueia remover a si mesmo e o último usuário, já que a API autentica via um usuário da conta). `Account::users()` adicionada.
+- Widget de atividade do mês (cobranças criadas, pagas + volume, conversão) e menu **Segurança** no cabeçalho: alterar a própria senha (exige senha atual) e **regenerar o token da API** (confirmação; o token antigo para de funcionar na hora).
+- Correção de segurança: `AccountResource::getEloquentQuery()` filtra pela conta do usuário; abrir `/admin/accounts/{uuid}/edit` de outra conta agora dá 404 (item 2 do §8 do DOCUMENTACAO.md resolvido). Dados bancários/Pix para saque ficaram de fora de propósito (o sistema é intermediador, o valor cai direto na conta do dono). Testes novos em `AccountPageTest`; suíte: 225 passando.
+
+## 2026-10-16 (1)
+- Tela de Configurações do painel redesenhada: tudo em português (título "Configurações", botões "Salvar alterações"/"Cancelar", labels) e organizada em seções — **Integração** (token de acesso no topo, URL de notificação e de redirecionamento com validação `url`), **Checkout** (validade do link de pagamento em segundos, numérica, mínimo 1), **Cartão de crédito** e **Tarifas de cobrança** (4 campos numa linha). Sem mudança de campos/colunas; testes do painel passando.
+
+## 2026-10-14 (8)
+- Detalhes do pagamento no painel agora mostram o **meio de pagamento** (Pix / cartão de crédito; em aberto com os dois meios: "Pix ou cartão (a definir)"), para cartão pago a **bandeira/final** e o **parcelamento** ("À vista" ou "Nx de R$ X sem juros"), a **taxa** aplicada, a tarifa e o total líquido (estimada, com aviso, enquanto não pago).
+- Tarifas por meio, configuráveis por conta em Configuração → "Tarifas de cobrança": `pix_fee_percent` (padrão 0,75, o valor antes fixo no código) e cartão por faixa de parcelas (`card_fee_percent_1x`, `_2_6x`, `_7_12x`; em branco = "Não configurada", sem tarifa). Migration `add_fee_settings_to_configs_and_payments`.
+- A tarifa é gravada como snapshot (`payments.fee_percent` / `fee_amount`) quando o pagamento é confirmado (polling do Pix e `markCardPaid`), então mudar a configuração não altera o histórico. Pagamentos Pix antigos sem snapshot usam 0,75%. `PagamentosResumoStats` passou a somar o valor líquido por pagamento (antes: soma × 0,9925). Os valores das taxas de cartão **não têm padrão**: precisam ser preenchidos pela conta. Testes novos; suíte: 215 passando.
+
+## 2026-10-14 (7)
+- Parcelamento do cartão configurável pelo painel admin (Configuração → "Cartão de crédito"): toggle "Permitir parcelamento" e "Parcelas máximas" (1–12). Desligado = cobrança sempre à vista e o seletor de parcelas some do checkout. Novas colunas `configs.card_installments_enabled` / `card_max_installments` (padrão `true`/12, preserva o comportamento anterior) e `payments.max_installments` (snapshot na criação do pagamento, como `duration`; `NULL` = legado, teto 12). `PayCardRequest` valida `installments` contra o snapshot do `Payment`.
+- **Removida** a env `CARD_MAX_INSTALLMENTS` e a chave `integration.card_max_installments`; o teto fixo é `Config::MAX_INSTALLMENTS` (12). Docs (`DOCUMENTACAO.md`, `CLAUDE.md`, `docs/pagarme/cc/integration.md`) atualizadas. Testes novos (Config, snapshot na criação, validação no `pay-card`, checkout, formulário do painel); suíte: 198 passando.
+
 ## 2026-10-14 (6)
 - Landing page (`/`) atualizada para as novas funcionalidades: PIX **e cartão** no texto, no hero e nos planos; prévia do checkout com abas Pix/Cartão interativas (formulário de cartão de exemplo); novos recursos "PIX, cartão ou ambos", "Cartão de crédito" (tokenização no navegador) e "Documentação interativa"; exemplo de integração com o payload real (`refExternal`, `payment_methods`, `items`, `customer`); botão "Ver documentação da API" para `/api/docs`; FAQ com cartão, escolha de meios e segurança dos dados. Testes novos em `LandingPageTest`.
 
