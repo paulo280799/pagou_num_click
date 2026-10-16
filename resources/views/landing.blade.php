@@ -116,6 +116,31 @@ section{padding-block:84px}
 .ico{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);display:grid;place-items:center;font:600 .9rem var(--mono);color:var(--accent-ink);background:var(--bg)}
 .feat article:first-child .ico{background:var(--surface);border-color:transparent}
 
+/* dashboard de exemplo */
+.dash{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;display:grid;gap:14px;box-shadow:0 24px 50px -28px rgba(0,0,0,.35);min-width:0}
+.dash-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.dash-top b{font:700 1.05rem var(--display);letter-spacing:-.01em}
+.dash-actions{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font:500 .74rem var(--body);border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 10px;color:var(--muted)}
+.chip.dl{color:var(--ink);font-weight:600}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kpi{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--bg);display:grid;gap:2px;min-width:0}
+.kpi small{font-size:.72rem;color:var(--muted)}
+.kpi strong{font:700 1.15rem var(--display);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.kpi em{font-style:normal;font-size:.72rem;color:var(--accent-ink)}
+.dchart{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--bg)}
+.dchart small{font-size:.72rem;color:var(--muted)}
+.dchart svg{display:block;width:100%;height:auto;margin-top:6px}
+.dstat{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.dstat div{border-radius:10px;padding:9px 10px;display:grid;gap:1px;font-size:.7rem;min-width:0}
+.dstat b{font:700 .8rem var(--display);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dstat .ok{background:var(--accent-soft);color:var(--accent-ink)}
+.dstat .wait{background:#FBF1DC;color:#7A5200}
+.dstat .bad{background:var(--warn-soft);color:var(--warn)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .dstat .wait{background:#2E2410;color:#F3C58B}}
+:root[data-theme="dark"] .dstat .wait{background:#2E2410;color:#F3C58B}
+.dnote{font-size:.74rem;color:var(--muted);text-align:center}
+
 /* api */
 .split{display:grid;grid-template-columns:.9fr 1.1fr;gap:48px;align-items:center}
 .split ul{list-style:none;padding:0;margin:22px 0 0;display:grid;gap:12px;color:var(--muted)}
@@ -157,6 +182,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
   .flow>div:nth-child(2){border-right:0}
   .flow>div:nth-child(-n+2){border-bottom:1px solid var(--line)}
   .feat,.plans{grid-template-columns:1fr}
+  .dstat{grid-template-columns:1fr 1fr}
   .feat article:first-child{grid-column:auto}
   nav ul{display:none}
   section{padding-block:60px}
@@ -178,6 +204,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
   <ul>
     <li><a href="#como-funciona">Como funciona</a></li>
     <li><a href="#recursos">Recursos</a></li>
+    <li><a href="#painel">Painel</a></li>
     <li><a href="#integracao">Integração</a></li>
     <li><a href="#planos">Planos</a></li>
     <li><a href="#duvidas">Dúvidas</a></li>
@@ -194,7 +221,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
       <a class="btn btn-primary" href="{{ $contactUrl }}">Quero contratar</a>
       <a class="btn btn-ghost" href="#integracao">Ver a integração</a>
     </div>
-    <div class="proof"><span>PIX e cartão de crédito</span><span>Webhook de confirmação</span><span>Painel para acompanhar</span></div>
+    <div class="proof"><span>PIX e cartão de crédito</span><span>Webhook de confirmação</span><span>Painel e relatórios</span></div>
   </div>
 
   <div class="pay" aria-label="Exemplo da tela de pagamento">
@@ -249,12 +276,51 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
     <article><div class="ico">↻</div><h3>Webhook com reenvio</h3><p>Se o seu sistema estiver fora do ar, tentamos de novo em intervalos crescentes, até 5 vezes.</p></article>
     <article><div class="ico">⏱</div><h3>Validade configurável</h3><p>Defina por quanto tempo o checkout fica válido. Cobranças vencidas são canceladas automaticamente.</p></article>
     <article><div class="ico">→</div><h3>Redirecionamento</h3><p>Depois do pagamento, o cliente volta para a página que você escolher.</p></article>
-    <article><div class="ico">▤</div><h3>Painel de acompanhamento</h3><p>Veja cobranças, status e valores recebidos em um só lugar, com resumo por período.</p></article>
+    <article><div class="ico">▤</div><h3>Dashboard e relatório</h3><p>Acompanhe cobranças, valores recebidos e a receita líquida por período, com gráfico e exportação em CSV.</p></article>
     <article><div class="ico">{ }</div><h3>Documentação interativa</h3><p>Referência da API em Swagger, com exemplos prontos para testar a criação de cobranças.</p></article>
   </div>
 </div></section>
 
-<section class="band" id="integracao"><div class="wrap split">
+<section class="band" id="painel"><div class="wrap split">
+  <div>
+    <span class="eyebrow">Painel</span>
+    <h2 style="margin-top:14px">Seu caixa à vista, sem planilha</h2>
+    <ul>
+      <li>Abre direto no <strong>dashboard</strong>: cobranças criadas, autorizadas, ticket médio e receita líquida.</li>
+      <li>Filtre por <code>hoje</code>, <code>7 dias</code>, <code>30 dias</code>, mês ou ano.</li>
+      <li>Gráfico do volume transacionado ou do número de cobranças ao longo do período.</li>
+      <li>Veja quanto está pago, pendente, cancelado ou com falha, com valor e percentual.</li>
+      <li>Baixe o <strong>relatório em CSV</strong> do período e abra direto no Excel.</li>
+      <li>Lista de pagamentos com busca, filtros e link de pagamento para copiar.</li>
+    </ul>
+  </div>
+  <div>
+    <div class="dash" role="img" aria-label="Exemplo ilustrativo do dashboard: cobranças criadas R$ 18.450,00, autorizadas R$ 14.320,00, 150 cobranças e ticket médio R$ 127,86">
+      <div class="dash-top"><b>Dashboard</b><div class="dash-actions"><span class="chip">Período: Este mês</span><span class="chip dl">Baixar relatório</span></div></div>
+      <div class="kpis">
+        <div class="kpi"><small>Cobranças criadas</small><strong>R$ 18.450,00</strong></div>
+        <div class="kpi"><small>Cobranças autorizadas</small><strong>R$ 14.320,00</strong><em>112 pagas · líquido R$ 14.150,00</em></div>
+        <div class="kpi"><small>Número de cobranças</small><strong>150</strong></div>
+        <div class="kpi"><small>Ticket médio</small><strong>R$ 127,86</strong></div>
+      </div>
+      <div class="dchart"><small>Volume total transacionado (TPV)</small>
+        <svg viewBox="0 0 320 90" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 70 C25 62 35 40 60 44 S95 74 120 58 S155 14 185 22 S225 62 250 46 S295 20 320 12 L320 90 L0 90 Z" fill="var(--accent)" opacity=".16"/>
+          <path d="M0 70 C25 62 35 40 60 44 S95 74 120 58 S155 14 185 22 S225 62 250 46 S295 20 320 12" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+        </svg>
+      </div>
+      <div class="dstat">
+        <div class="ok"><span>Pago</span><b>R$ 14.320,00</b><span>112 (74,67%)</span></div>
+        <div class="wait"><span>Pendente</span><b>R$ 1.980,00</b><span>14 (9,33%)</span></div>
+        <div class="bad"><span>Cancelado</span><b>R$ 1.870,00</b><span>20 (13,33%)</span></div>
+        <div class="bad"><span>Falha</span><b>R$ 280,00</b><span>4 (2,67%)</span></div>
+      </div>
+      <div class="dnote">Exemplo ilustrativo com valores fictícios</div>
+    </div>
+  </div>
+</div></section>
+
+<section id="integracao"><div class="wrap split">
   <div>
     <span class="eyebrow">Integração</span>
     <h2 style="margin-top:14px">Uma chamada. Um link.</h2>
@@ -291,7 +357,7 @@ Authorization: Bearer <span class="s">seu_token</span>
 }</pre></div>
 </div></section>
 
-<section id="planos"><div class="wrap">
+<section class="band" id="planos"><div class="wrap">
   <div class="head">
     <span class="eyebrow">Planos</span>
     <h2>Planos para cada volume</h2>
@@ -299,7 +365,7 @@ Authorization: Bearer <span class="s">seu_token</span>
   </div>
   <div class="plans">
     <div class="plan"><h3>Início</h3><div class="price"><span class="tbd">Sob consulta</span></div>
-      <ul><li>Link de pagamento com PIX e cartão</li><li>Webhook de confirmação</li><li>Painel de acompanhamento</li></ul>
+      <ul><li>Link de pagamento com PIX e cartão</li><li>Webhook de confirmação</li><li>Dashboard e relatório em CSV</li></ul>
       <a class="btn btn-ghost" href="{{ $contactUrl }}">Falar com a gente</a></div>
     <div class="plan hot"><h3>Negócio</h3><div class="price"><span class="tbd">Sob consulta</span></div>
       <ul><li>Tudo do Início</li><li>Validade e redirecionamento personalizados</li><li>Suporte prioritário</li></ul>
@@ -310,7 +376,7 @@ Authorization: Bearer <span class="s">seu_token</span>
   </div>
 </div></section>
 
-<section class="band" id="duvidas"><div class="wrap">
+<section id="duvidas"><div class="wrap">
   <div class="head"><span class="eyebrow">Dúvidas</span><h2>Perguntas frequentes</h2></div>
   <div class="faq">
     <details><summary>Preciso ter uma tela de pagamento no meu sistema?</summary><p>Não. A resposta da API já traz um link de pagamento hospedado por nós, com QR Code, PIX copia e cola e formulário de cartão de crédito.</p></details>
@@ -318,7 +384,7 @@ Authorization: Bearer <span class="s">seu_token</span>
     <details><summary>Os dados do cartão passam pelo servidor de vocês?</summary><p>Não. O cartão é tokenizado direto no navegador do cliente, e só o token é usado para concluir a cobrança. Número, validade e CVV não são armazenados.</p></details>
     <details><summary>Como sei que o cliente pagou?</summary><p>Enviamos um webhook para a URL cadastrada na sua conta assim que o status muda. Se a entrega falhar, tentamos novamente até 5 vezes.</p></details>
     <details><summary>Por quanto tempo o link de pagamento fica válido?</summary><p>Você define a validade nas configurações da conta. Passado o prazo, a cobrança é cancelada automaticamente.</p></details>
-    <details><summary>Posso acompanhar os pagamentos sem usar a API?</summary><p>Sim. O painel mostra todas as cobranças da sua conta, com status e valores.</p></details>
+    <details><summary>Posso acompanhar os pagamentos sem usar a API?</summary><p>Sim. O painel abre num dashboard com cobranças, valores recebidos, receita líquida e gráfico por período (hoje, 7 e 30 dias, mês ou ano), além da lista de pagamentos com busca e filtros. Também dá para baixar o relatório do período em CSV.</p></details>
     <details><summary>Quais são as taxas?</summary><p>Dependem do plano e do volume de cobranças. Fale com a gente para receber a proposta.</p></details>
   </div>
 </div></section>

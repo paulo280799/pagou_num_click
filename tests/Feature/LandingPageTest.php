@@ -42,4 +42,15 @@ class LandingPageTest extends TestCase
     {
         $this->get('/')->assertSee('href="'.route('api.docs').'"', false);
     }
+
+    public function test_landing_presents_dashboard_and_report(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('id="painel"', false)
+            ->assertSee('href="#painel"', false)
+            ->assertSee('Dashboard e relatório')
+            ->assertSee('Baixar relatório')
+            ->assertSee('relatório em CSV');
+    }
 }
