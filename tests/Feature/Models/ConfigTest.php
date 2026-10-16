@@ -97,4 +97,32 @@ class ConfigTest extends TestCase
         $this->assertSame(900, $config->refresh()->duration);
         $this->assertIsInt($config->duration);
     }
+
+    public function test_effective_max_installments_respects_toggle_and_bounds(): void
+    {
+        $config = new Config(['card_installments_enabled' => true, 'card_max_installments' => 6]);
+        $this->assertSame(6, $config->effectiveMaxInstallments());
+
+        $config->card_installments_enabled = false;
+        $this->assertSame(1, $config->effectiveMaxInstallments());
+
+        $config = new Config(['card_installments_enabled' => true, 'card_max_installments' => 99]);
+        $this->assertSame(12, $config->effectiveMaxInstallments());
+
+        $config = new Config(['card_installments_enabled' => true, 'card_max_installments' => 0]);
+        $this->assertSame(1, $config->effectiveMaxInstallments());
+    }
+
+    public function test_installment_settings_default_to_enabled_and_twelve(): void
+    {
+        $account = \App\Models\Account::factory()->create();
+        \Illuminate\Support\Facades\DB::table('configs')->insert([
+            'id' => (string) \Illuminate\Support\Str::uuid(), 'duration' => '900', 'notification_url' => 'x', 'redirect_url' => 'x',
+            'api_token' => 'tok', 'account_id' => $account->id, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $config = Config::withoutGlobalScopes()->first();
+        $this->assertTrue($config->card_installments_enabled);
+        $this->assertSame(12, $config->card_max_installments);
+    }
 }

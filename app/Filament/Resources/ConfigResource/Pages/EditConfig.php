@@ -11,6 +11,18 @@ class EditConfig extends EditRecord
 {
     protected static string $resource = ConfigResource::class;
 
+    protected static ?string $title = 'Configurações';
+
+    protected function getSaveFormAction(): Actions\Action
+    {
+        return parent::getSaveFormAction()->label('Salvar alterações');
+    }
+
+    protected function getCancelFormAction(): Actions\Action
+    {
+        return parent::getCancelFormAction()->label('Cancelar');
+    }
+
     public function mount(int | string $record): void
     {
         if (!auth()->user() || !auth()->user()->account->id) {

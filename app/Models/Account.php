@@ -11,9 +11,14 @@ class Account extends Model
 {
     use HasFactory, HasUuids;
 
-    protected $fillable = ['id', 'name'];
+    protected $fillable = ['id', 'name', 'legal_name', 'document', 'contact_email', 'phone'];
 
     public function user(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
+
+    public function users(): HasMany
     {
         return $this->hasMany(User::class);
     }

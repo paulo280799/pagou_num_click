@@ -280,5 +280,5 @@ Pela doc oficial ([crédito](https://docs.pagar.me/docs/simulador-de-cart%C3%A3o
 
 - 3DS, cartão salvo (`card_id`), recorrência, captura posterior (`auth_only`), parcelamento com juros.
 - Estorno/cancelamento de cartão e chargeback (o sistema não trata `voided`/`refunded`/`chargedback`).
-- Taxa de 0,75% do painel (`PaymentResource` e widgets) assume PIX.
+- Tarifa por meio (Pix e cartão por faixa de parcelas) é configurada por conta no painel e gravada em `payments.fee_percent`/`fee_amount` na confirmação (resolvido).
 - PIX pendente de um pagamento pago no cartão não é cancelável: o polling o vigia até expirar e loga erro se for pago.

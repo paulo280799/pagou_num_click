@@ -42,7 +42,7 @@ Decisões que moldam o desenho:
 | Cobrança | [CardPaymentController::store](../../../app/Http/Controllers/CardPaymentController.php) | Reserva a tentativa, chama a Pagar.me, aplica o resultado |
 | Mapper | [ChargeResult](../../../app/Support/ChargeResult.php), [ChargeOutcome](../../../app/Support/ChargeOutcome.php) | `last_transaction.status` → `PAID`/`DECLINED`/`PENDING_REVIEW`/`UNKNOWN` |
 | Cliente HTTP | [ApiService](../../../app/Services/ApiService.php) | `create_card_order` (com `Idempotency-Key` e timeout), `get_order`, `get_orders_by_code` |
-| Config | [config/integration.php](../../../config/integration.php) | `public_key`, `card_max_installments`, `card_statement_descriptor`, `card_http_timeout` |
+| Config | [config/integration.php](../../../config/integration.php) | `public_key`, `card_statement_descriptor`, `card_http_timeout` |
 | Polling | [ProcessPaymentController](../../../app/Http/Controllers/ProcessPaymentController.php) | Resolve tentativas em análise/timeout e vigia o PIX aberto |
 | Checkout | [PaymentStatusPending](../../../app/Livewire/PaymentStatusPending.php), [card-form.blade.php](../../../resources/views/livewire/partials/card-form.blade.php), [card-form.js](../../../resources/js/card-form.js) | Abas Pix \| Cartão e formulário |
 | Modelo | [Payment](../../../app/Models/Payment.php) | Colunas de cartão, `markCardPaid()`, `releaseCardAttempt()` |
@@ -84,7 +84,7 @@ Resposta: `{ "id": "token_..." }`. O token **expira em 1 minuto e só vale uma v
 Regras de validação ([PayCardRequest](../../../app/Http/Requests/PayCardRequest.php)):
 
 - `card_token`: obrigatório, `^token_[A-Za-z0-9]+$`.
-- `installments`: inteiro, `1..CARD_MAX_INSTALLMENTS` (padrão 12). Só **parcelamento sem juros**: o valor total não muda, a Pagar.me apenas divide.
+- `installments`: inteiro, `1..payments.max_installments`. O limite é configurado por conta no painel (`Config.card_installments_enabled` / `card_max_installments`, 1–12, padrão 12; desligado = 1) e copiado para o `Payment` na criação. Só **parcelamento sem juros**: o valor total não muda, a Pagar.me apenas divide.
 - `billing_address.*`: `line_1` (≤256), `zip_code` (≤16), `city` (≤64), `state` (≤64) e `country` (2 letras) obrigatórios. **A Pagar.me não tokeniza o endereço**: sem `billing_address` no pedido a charge falha (`validation_error | billing | "value" is required`).
 - **Não existe campo de valor.** Qualquer `amount` no corpo é ignorado; o valor vem do `Payment` no banco.
 
@@ -163,7 +163,7 @@ A **aba Cartão** só renderiza se `STONE_PUBLIC_KEY_INTEGRATION` está configur
 
 **Formulário** (`partials/card-form.blade.php` + `resources/js/card-form.js`): Alpine puro dentro de `wire:ignore`, **sem `wire:model`**. Dados do cartão nunca passam pelo Livewire (que serializa estado e re-renderiza a cada 5 s) nem pelo Laravel.
 
-Campos: número (máscara em grupos de 4, Luhn, 13–19 dígitos), nome, validade `MM/AA` (não vencida), CVV (3–4), parcelas (1..`CARD_MAX_INSTALLMENTS`, "Nx de R$ X sem juros"), CEP, rua, número, cidade e UF.
+Campos: número (máscara em grupos de 4, Luhn, 13–19 dígitos), nome, validade `MM/AA` (não vencida), CVV (3–4), parcelas (1..limite do `Payment`, "Nx de R$ X sem juros"; sem seletor quando o limite é 1), CEP, rua, número, cidade e UF.
 
 - **CEP:** ao completar 8 dígitos consulta `https://viacep.com.br/ws/{cep}/json/` (timeout 5 s, sem cookies) e preenche rua/cidade/UF. Só o CEP sai para o ViaCEP. CEP inexistente ou falha → aviso e preenchimento manual. O envio **não** depende do ViaCEP (basta 8 dígitos).
 - `line_1` é enviado como `"{rua}, {número}"`; `country` fixo `BR`.
@@ -238,7 +238,6 @@ Colunas de cartão (todas nullable; **nunca** PAN, CVV, validade, `card_token` n
 | Variável | Uso |
 | :-- | :-- |
 | `STONE_PUBLIC_KEY_INTEGRATION` | Public key (`pk_...`) exposta ao browser para tokenizar. **Mesmo ambiente** (teste/produção) de `USER_INTEGRATION`. Sem ela a aba de cartão não aparece |
-| `CARD_MAX_INSTALLMENTS` | Máximo de parcelas sem juros (padrão 12) |
 | `CARD_STATEMENT_DESCRIPTOR` | Texto na fatura, até 13 caracteres (padrão `PAGOUNUMCLICK`) |
 | `CARD_HTTP_TIMEOUT` | Timeout (s) das chamadas ao provedor no cartão e no polling; também define a janela de reenvio (`+5 s`). Padrão 15 |
 | `URL_INTEGRATION` / `USER_INTEGRATION` / `PASSWORD_INTEGRATION` | Os mesmos do PIX (secret key `sk_...`) |
@@ -273,7 +272,7 @@ Chaves `sk_test_`/`pk_test_` do projeto (2026-10-11/12); detalhes em [doc.md](do
 2. PIX pendente não é cancelável: após cartão aprovado ele só expira; pagamento duplicado exige **estorno manual** (o polling apenas loga).
 3. Sem 3DS, cartão salvo, recorrência, `auth_only`, parcelamento com juros, estorno/cancelamento e chargeback (o sistema não trata `voided`/`refunded`/`chargedback`).
 4. Escopo PCI **SAQ A-EP** (campos nossos, não hospedados); reavaliar se compliance exigir iframe/campos hospedados.
-5. Taxa de 0,75% do painel (`PaymentResource` e widgets) assume PIX; cartão terá taxa diferente.
+5. ~~Taxa de 0,75% assume PIX~~ — resolvido: tarifa por meio configurável por conta (Pix e cartão por faixa de parcelas), gravada no pagamento ao confirmar.
 6. Pagamentos antigos sem `customer` só pagam por PIX.
 7. `items[0].description` do pedido de cartão é texto genérico (`Pedido {refExternal}`): a descrição original não é persistida.
 8. Dependência externa no browser: ViaCEP (opcional, degrada para digitação manual) e `api.pagar.me` (tokenização).

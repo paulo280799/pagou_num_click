@@ -69,11 +69,11 @@ accounts 1───N configs      (na prática 1:1, ver Filament)
 accounts 1───N payments
 ```
 
-**accounts** — `id (uuid)`, `name`.
+**accounts** — `id (uuid)`, `name`, `legal_name`, `document` (CPF/CNPJ, só dígitos), `contact_email`, `phone` (só dígitos); os quatro últimos são opcionais.
 **users** — tabela padrão do Laravel + `account_id` (uuid, FK cascade).
-**configs** — `id`, `duration` (segundos de validade do PIX; coluna string, com cast inteiro no model), `notification_url`, `redirect_url`, `api_token`, `account_id`.
+**configs** — `id`, `duration` (segundos de validade do PIX; coluna string, com cast inteiro no model), `notification_url`, `redirect_url`, `card_installments_enabled` (bool, padrão `true`), `pix_fee_percent` e `card_fee_percent_1x`/`_2_6x`/`_7_12x` (tarifas, ver §6), `card_max_installments` (1–12, padrão 12; ambos editáveis no painel, seção "Cartão de crédito"), `api_token`, `account_id`.
 **payments** — `id` (uuid, usado no link de checkout), `ide` (id do pedido PIX no provedor; `NULL` em checkout só-cartão), `refExternal` (referência do cliente), `payment_methods` (JSON `["pix","credit_card"]`, meios habilitados no checkout; `NULL` = legado, aceita ambos), `qrCode` (URL da imagem; `NULL` em só-cartão), `copyPaste` (PIX copia-e-cola; `NULL` em só-cartão), `amount` (double, em reais), `status`, `payment_method`, `duration`, `expirationDate`, `paymentDate`, `redirect_url`, `notification_url`, `notification_attempts`, `last_notification_attempt`, `is_notified`, `account_id`.
-**payments — colunas de cartão** (todas nullable; nunca guardam PAN, CVV, validade, `card_token` nem endereço): `card_order_id` (pedido de cartão `or_...`; `ide` continua sendo o pedido PIX), `card_attempt_key` + `card_attempt_started_at` (tentativa em curso; a chave vira o header `Idempotency-Key`), `card_brand`, `card_last_four`, `installments`, `acquirer_tid`/`acquirer_nsu`/`acquirer_auth_code`, e `customer` (dados do cliente do `POST /api/create-payment`, `encrypted:array`, em `$hidden`; depende de `APP_KEY` estável).
+**payments — colunas de cartão** (todas nullable; nunca guardam PAN, CVV, validade, `card_token` nem endereço): `card_order_id` (pedido de cartão `or_...`; `ide` continua sendo o pedido PIX), `card_attempt_key` + `card_attempt_started_at` (tentativa em curso; a chave vira o header `Idempotency-Key`), `card_brand`, `card_last_four`, `installments`, `fee_percent`/`fee_amount` (tarifa aplicada na confirmação do pagamento; `NULL` = legado ou tarifa não configurada), `max_installments` (snapshot de parcelas máximas da `Config` na criação; 1 = à vista; `NULL` = legado, teto 12), `acquirer_tid`/`acquirer_nsu`/`acquirer_auth_code`, e `customer` (dados do cliente do `POST /api/create-payment`, `encrypted:array`, em `$hidden`; depende de `APP_KEY` estável).
 
 `Payment` copia `duration`, `redirect_url` e `notification_url` da `Config` no momento da criação (snapshot).
 
@@ -127,7 +127,7 @@ Processamento (`CheckoutController::store`):
 ### `POST /checkout/{id}/pay-card` (pública, usada pela página de checkout)
 Rota `web` (CSRF obrigatório, `X-CSRF-TOKEN`), com limiter dedicado `pay-card` (5 tentativas / 10 min por IP + `Payment.id`; o throttle global do grupo `web` continua desligado, ver §9).
 
-Corpo (`PayCardRequest`): `card_token` (`token_...`), `installments` (1..`CARD_MAX_INSTALLMENTS`, sem juros), `billing_address` (`line_1`, `zip_code`, `city`, `state`, `country` de 2 letras). **Não existe campo de valor**: o `amount` vem sempre do `Payment` no banco.
+Corpo (`PayCardRequest`): `card_token` (`token_...`), `installments` (1..limite do `Payment`, sem juros; o limite é o snapshot `payments.max_installments`, vindo da `Config` da conta no painel), `billing_address` (`line_1`, `zip_code`, `city`, `state`, `country` de 2 letras). **Não existe campo de valor**: o `amount` vem sempre do `Payment` no banco.
 
 `CardPaymentController::store`, em 3 fases (nenhum lock fica preso durante a chamada externa):
 1. **Reservar** (transação com `lockForUpdate`): exige `PENDING`, não expirado e `customer` preenchido; grava `card_attempt_key` (reaproveita a anterior se a tentativa deu timeout) e `card_attempt_started_at`.
@@ -197,11 +197,10 @@ Seleciona `is_notified = false` e `status != PENDING`. Para cada um (`attemptNot
 
 Configurado em [AdminPanelProvider](app/Providers/Filament/AdminPanelProvider.php): login habilitado, **registro desativado** (a classe `Register`, que cria `Account` + `User`, está comentada), cor primária âmbar, atalho para `/telescope` no menu do usuário.
 
-- **PaymentResource** (Transações): lista somente-leitura com polling de 5 s, id copiável (copia o link de checkout), valor, status; visualização com taxa de processamento **0,75 %** e total líquido. Header com widgets:
-  - `PagamentosStats`: total, pendentes, pagos, cancelados/falhos;
-  - `PagamentosResumoStats`: receita líquida (–0,75 %) do dia/semana/mês/ano.
-- **AccountResource**: edição do nome da conta (padrão "singleton": `/create` redireciona para `edit` se a conta já existe).
-- **ConfigResource**: edição de `duration`, `notification_url`, `redirect_url`; exibe o `api_token` em campo desabilitado. Mesmo padrão singleton (cria a `Config` se não existir; o token é gerado no evento `creating`).
+- **PaymentResource** (Pagamentos): lista somente-leitura com polling de 5 s. Colunas: referência (busca por referência/ID; ID curto na descrição), meio (Pix / "Cartão · 3x" / "Pix ou cartão"), valor, status (badge) e criado em. Abas por status com contagem (Todos / Aguardando / Pagos / Cancelados — cancelados inclui falhos), filtros (meio, período, faixa de valor) e ação "Copiar link" (checkout) nos pendentes. A visualização (modal "Pagamento {ref}") tem cabeçalho (status, valor, referência, id) e seções Pagamento (meio, bandeira/final e parcelamento do cartão pago, criado/expira/pago em), Valores (venda, taxa, tarifa de processamento, total líquido), Cliente (nome, e-mail e documento **mascarado**; o `customer` continua criptografado, por isso não é pesquisável) e Dados técnicos (recolhida: IDs do provedor, TID, NSU, autorização). Os itens da venda não são guardados no `Payment`, então não aparecem. Header com widget:
+  - `PagamentosResumoStats`: receita líquida do dia/semana/mês/ano (valor – `fee_amount` de cada pagamento; sem snapshot, Pix legado usa 0,75 % e cartão não tem tarifa).
+- **AccountResource** ("Minha conta"): dados cadastrais, gestão de usuários da conta (`UsersRelationManager`: criar/editar/remover; não remove a si mesmo nem o último usuário), widget de atividade do mês (cobranças, pagas/volume, conversão) e ação "Alterar minha senha" no cabeçalho. O `api_token` é regenerado em **Configurações → Integração** (botão "Regenerar token"; invalida o anterior na hora). Padrão "singleton": `/create` redireciona para `edit` se a conta já existe. `getEloquentQuery()` filtra pela conta do usuário logado.
+- **ConfigResource**: edição de `duration`, `notification_url`, `redirect_url`, parcelamento do cartão (toggle + parcelas máximas 1–12) e tarifas por meio (`pix_fee_percent`, padrão 0,75; cartão por faixa de parcelas `card_fee_percent_1x` / `_2_6x` / `_7_12x`, em branco = "não configurada"); exibe o `api_token` em campo desabilitado. Mesmo padrão singleton (cria a `Config` se não existir; o token é gerado no evento `creating`).
 
 ---
 
@@ -215,7 +214,6 @@ Não há `.env.example` no repositório. Variáveis específicas do projeto, al�
 | `USER_INTEGRATION` / `PASSWORD_INTEGRATION` | Basic Auth do provedor |
 | `WEBHOOK_SECRET` | Enviado em `X-Webhook-Secret` nos webhooks de saída |
 | `STONE_PUBLIC_KEY_INTEGRATION` | Public key (`pk_...`) exposta ao browser para tokenizar o cartão. Precisa ser do **mesmo ambiente** (teste/produção) de `USER_INTEGRATION`. Sem ela a aba de cartão não aparece |
-| `CARD_MAX_INSTALLMENTS` | Máximo de parcelas sem juros (padrão 12) |
 | `CARD_STATEMENT_DESCRIPTOR` | Texto na fatura, até 13 caracteres (padrão `PAGOUNUMCLICK`) |
 | `CARD_HTTP_TIMEOUT` | Timeout (s) das chamadas ao provedor no fluxo de cartão e no polling (padrão 15) |
 | `APP_URL` | Base do `payment_link` retornado e do link copiado no painel |
@@ -230,7 +228,7 @@ Observações para revisão, das mais importantes às menores. Itens 5, 6, 7, 9,
 
 **Segurança / integridade**
 1. **Cancelamento forjável no checkout** — [PaymentTimer](app/Livewire/PaymentTimer.php): `cancelar()` é método público e `expirationDate` é propriedade pública (adulterável no cliente Livewire). Qualquer pagador pode cancelar a própria cobrança. Pior: o pagamento cancelado localmente deixa de ser consultado pelo `ProcessPaymentController`, então um PIX pago depois **não é reconhecido**.
-2. **`AccountResource` sem escopo** — `Account` não tem `UserScope`; um usuário autenticado pode abrir `/admin/accounts/{uuid}/edit` de outra conta se souber o id.
+2. ~~**`AccountResource` sem escopo**~~ — **resolvido**: `AccountResource::getEloquentQuery()` restringe à conta do usuário logado (UUID de outra conta → 404).
 3. **Painel/Telescope** — `User::canAccessPanel()` retorna sempre `true`; o gate do Telescope libera qualquer usuário autenticado; `laravel/telescope` está em `require` (produção). Telescope guarda payloads (incluindo dados de clientes e o token) em produção só se cair nos filtros, mas fica exposto a qualquer login.
 4. **`api_token` em texto puro**, comparado direto no banco; o token aparece em claro no painel.
 5. ~~**Bug no `Config::boot`** — usa `$model->api_token` (variável inexistente; deveria ser `$item`), então o `empty()` é sempre verdadeiro e sobrescreve qualquer token fornecido.~~ — **corrigido** (`$item->api_token`); o guard agora funciona e só gera token novo quando não há um já definido no model.
@@ -243,7 +241,7 @@ Observações para revisão, das mais importantes às menores. Itens 5, 6, 7, 9,
 10. ~~`duration` é `string` em `configs` mas usado como inteiro em `addSeconds`.~~ — **corrigido**: cast `integer` em `Config` (a coluna continua string).
 11. ~~Sem `withoutOverlapping()` nos comandos de 10 s~~ — **corrigido** (`withoutOverlapping(1)`). `ProcessPaymentController` agora usa timeout e captura `ConnectionException` por pagamento.
 12. ~~`ConfigResource::getRecord()` contém um `dd()` esquecido.~~ — **removido**.
-13. Taxa 0,75 % fixa e repetida em 3 lugares (infolist e widgets); não há campo de taxa.
+13. ~~Taxa 0,75 % fixa e repetida em 3 lugares~~ — **resolvido**: tarifa por meio configurável por conta no painel, gravada como snapshot (`payments.fee_percent`/`fee_amount`) quando o pagamento é confirmado. Observação: o próprio usuário da conta edita as tarifas; elas são informativas (não alteram a cobrança no provedor).
 14. `ApiService::close_order` (comprovadamente não cancela PIX pendente), `TypeTransactionEnum` e o layout `filament/pages/auth/register.blade.php` não são usados.
 
 **Repositório**

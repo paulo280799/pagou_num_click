@@ -283,4 +283,33 @@ class CardPaymentTest extends TestCase
         $this->assertSame(StatusPaymentEnum::PAID, $payment->refresh()->status);
         $this->assertSame(PaymentMethodEnum::CREDIT_CARD, $payment->payment_method);
     }
+
+    public function test_installments_above_payment_snapshot_limit_are_rejected(): void
+    {
+        $payment = $this->payment('withCustomer', ['max_installments' => 3]);
+        Http::fake();
+
+        $this->pay($payment, ['installments' => 4])->assertStatus(422)->assertJsonValidationErrors('installments');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_installments_within_snapshot_limit_are_accepted(): void
+    {
+        $payment = $this->payment('withCustomer', ['max_installments' => 3]);
+        Http::fake(['*/v5/orders' => Http::response($this->orderResponse('captured'), 200)]);
+
+        $this->pay($payment, ['installments' => 3])->assertOk();
+
+        Http::assertSent(fn (Request $r) => $r['payments'][0]['credit_card']['installments'] === 3);
+    }
+
+    public function test_installments_disabled_only_accepts_single_payment(): void
+    {
+        $payment = $this->payment('withCustomer', ['max_installments' => 1]);
+        Http::fake(['*/v5/orders' => Http::response($this->orderResponse('captured'), 200)]);
+
+        $this->pay($payment, ['installments' => 2])->assertStatus(422)->assertJsonValidationErrors('installments');
+        $this->pay($payment, ['installments' => 1])->assertOk();
+    }
 }

@@ -53,4 +53,22 @@ class WidgetsTest extends TestCase
 
         return $reflection->invoke($object, ...$args);
     }
+
+    public function test_resumo_liquido_uses_stored_fee_per_payment_and_legacy_fallback(): void
+    {
+        $account = Account::factory()->create();
+        $this->actingAs(User::factory()->create(['account_id' => $account->id]));
+        // Pix legado sem snapshot: 100 - 0,75
+        Payment::factory()->paid()->create(['account_id' => $account->id, 'amount' => 100]);
+        // cartão com snapshot: 200 - 9
+        Payment::factory()->cardPaid()->create(['account_id' => $account->id, 'amount' => 200, 'fee_percent' => 4.5, 'fee_amount' => 9]);
+        // cartão sem tarifa configurada: 50 - 0
+        Payment::factory()->cardPaid()->create(['account_id' => $account->id, 'amount' => 50]);
+        // não pago não entra
+        Payment::factory()->create(['account_id' => $account->id, 'amount' => 999]);
+
+        $liquido = $this->callProtected(new PagamentosResumoStats(), 'calcularValorLiquidoPorPeriodo', ['dia']);
+
+        $this->assertSame('R$ 340,25', $liquido);
+    }
 }
