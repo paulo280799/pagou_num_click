@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (35)
+- **CRUD de administradores no painel da plataforma**: menu "Administradores" (`/platform/administradores`) para gerenciar os super-admins. Lista só quem tem `is_super_admin` (marca "Você" no usuário logado); criar com nome, e-mail (único em toda a tabela `users`) e senha ≥ 8 com confirmação — a flag entra por `forceFill` (continua fora do `$fillable`) e o usuário fica na conta "Plataforma"; editar (senha em branco mantém a atual, a flag nunca muda por aqui); remover (não a si mesmo; sempre sobra ao menos um). Donos de conta não aparecem e dão 404 se abertos por esta rota. Testes: `Platform/PlatformAdminsTest`.
+
 ## 2026-11-22 (34)
 - **Painéis separados: super-admin não usa o `/admin` (achado na validação manual)**: o super-admin entrava no painel de contas (`/admin`) e via uma conta vazia, o que não faz sentido para quem opera a plataforma (a conta "Plataforma" só existe porque `users.account_id` é obrigatório). Agora `User::canAccessPanel` separa os painéis (`/admin` = donos de conta, `/platform` = super-admin) e o middleware `KeepSuperAdminsOnPlatform` redireciona o super-admin de `/admin` para `/platform` (logout continua passando). Os atalhos entre painéis da entrada 33 foram removidos; o link do Telescope passou para o menu do `/platform`. Testes em `PlatformTest`; verificado por HTTP real com sessões forjadas.
 
