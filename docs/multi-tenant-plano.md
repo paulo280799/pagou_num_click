@@ -67,3 +67,6 @@ Fase 1 e 2 sobem sozinhas (valor imediato, sem mudar contrato). Fase 3 em PRs me
 - Credenciais de terceiros em banco: criptografia depende de `APP_KEY`; perder a chave = perder todas as credenciais. Backup da chave obrigatório.
 - Cliente que cadastra credencial errada só descobre ao cobrar: validar na hora de salvar e exibir status (`last_validated_at`).
 - Sandbox x produção: credencial `TEST-`/chaves de teste em conta de produção gera cobrança fake; guardar o ambiente e mostrá-lo no painel.
+
+## Futuro (fora do escopo atual)
+- **Papéis dentro da conta** (`owner` / `viewer`): hoje todo usuário da conta pode tudo (token, credenciais dos gateways, usuários). Implementar quando algum cliente precisar dar acesso só-leitura (ex.: contabilidade). Esboço: coluna `users.role` (existentes = `owner`; convite cria `owner`), telas de Gateways/Configurações/Usuários/token só para `owner`, `viewer` não se promove nem cria usuários, testes por papel.
