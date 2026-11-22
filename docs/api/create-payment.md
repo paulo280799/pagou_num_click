@@ -81,6 +81,18 @@ Redirecione o pagador para essa URL. `gateway` (`pagarme` ou `mercadopago`) diz 
 { "error": "Unauthorized" }
 ```
 
+### `403`
+
+Conta suspensa pela plataforma. Checkouts já criados continuam pagáveis até expirar.
+
+```json
+{ "error": "Account suspended" }
+```
+
+### `422` — conta sem gateway
+
+A conta ainda não cadastrou credenciais de nenhum gateway (painel → Gateways): `{"success": false, "message": "Nenhum gateway de pagamento configurado para esta conta. Cadastre as credenciais no painel."}`.
+
 ### `422` — validação
 
 Sempre JSON, mesmo sem `Accept: application/json`. Formato Laravel: mensagem principal e mapa `campo → mensagens`, com índices em notação de ponto.

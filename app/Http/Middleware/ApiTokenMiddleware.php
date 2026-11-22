@@ -33,6 +33,10 @@ class ApiTokenMiddleware
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
+        if ($config->account()->value('suspended_at') !== null) {
+            return response()->json(['error' => 'Account suspended'], 403);
+        }
+
         // O token identifica a conta (tenant); nenhum usuário é logado. UserScope e os creating() leem daqui.
         app(TenantContext::class)->set($config->account_id);
 

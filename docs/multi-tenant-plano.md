@@ -48,10 +48,10 @@ Nota: `UserScope` ficou como escopo + `TenantContext`; trait `BelongsToAccount` 
 - [x] Tela no painel para o tenant cadastrar/validar credenciais (chamada de teste ao provedor, `GET /users/me` no MP); campos secretos mascarados após salvar; aviso "sem redundância" quando só um gateway está ativo.
 - [x] Scheduler (`process-payment`/`process-webhook`): carregar credenciais pelo `payment.account_id`; um tenant com credencial inválida não trava o laço.
 
-## Fase 4 — Onboarding e papéis (L3, L6)
-- [ ] Papel `super_admin` (flag em `users`) com painel `/platform` separado: criar conta, convidar usuário, suspender, ver volume. Sem isso, nada de multi-cliente operável.
-- [ ] Convite por e-mail (link assinado, define senha); Filament `Register` continua desligado.
-- [ ] Conta suspensa: API responde 403, checkout existente continua pagável até expirar.
+## Fase 4 — Onboarding e papéis (L3, L6) — FEITA (mesma branch; papéis dentro da conta ficam fora, só se pedido). Primeiro super-admin: `php artisan platform:make-admin {email}`
+- [x] Papel `super_admin` (flag em `users`) com painel `/platform` separado: criar conta, convidar usuário, suspender, ver volume. Sem isso, nada de multi-cliente operável.
+- [x] Convite por e-mail (link assinado, define senha); Filament `Register` continua desligado.
+- [x] Conta suspensa: API responde 403, checkout existente continua pagável até expirar.
 - [ ] Papéis dentro da conta (`owner`/`viewer`) se pedido; `AccountResource` já filtra pela própria conta.
 
 ## Fase 5 — Operação por tenant

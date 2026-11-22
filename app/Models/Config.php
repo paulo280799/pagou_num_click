@@ -109,6 +109,11 @@ class Config extends Model
         );
     }
 
+    public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
+
     public static function generateToken(): string
     {
         return 'pnc_'.Str::random(40);
