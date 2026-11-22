@@ -80,4 +80,29 @@ class PaymentTimerTest extends TestCase
     {
         $this->assertFalse(property_exists(PaymentTimer::class, 'expirationDate'));
     }
+
+    /** @dataProvider timeLeftFormats */
+    public function test_time_left_shows_hours_only_from_one_hour_up(int $seconds, string $expected): void
+    {
+        $this->assertSame($expected, PaymentTimer::formatTimeLeft($seconds));
+    }
+
+    public static function timeLeftFormats(): array
+    {
+        return [
+            'expired' => [-5, '00:00'],
+            'seconds' => [45, '00:45'],
+            'minutes' => [899, '14:59'],
+            'just under an hour' => [3599, '59:59'],
+            'exactly one hour' => [3600, '1:00:00'],
+            'two hours minus 1m27s' => [7113, '1:58:33'],
+        ];
+    }
+
+    public function test_initial_render_of_a_long_timer_includes_hours(): void
+    {
+        $payment = Payment::factory()->create(['account_id' => Account::factory()->create()->id, 'expirationDate' => now()->addMinutes(118)->addSeconds(30)]);
+
+        Livewire::test(PaymentTimer::class, ['paymentId' => $payment->id])->assertSee("display: '1:58:", false);
+    }
 }

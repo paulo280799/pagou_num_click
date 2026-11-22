@@ -45,11 +45,19 @@ class PaymentTimer extends Component
         }
     }
 
+    /** MM:SS; com 1 h ou mais, H:MM:SS (o mesmo formato do countdown em JS). */
+    public static function formatTimeLeft(int|float $seconds): string
+    {
+        $seconds = max(0, (int) $seconds);
+
+        return $seconds >= 3600 ? gmdate('G:i:s', $seconds) : gmdate('i:s', $seconds);
+    }
+
     public function render()
     {
         return view('livewire.payment-timer', [
             'expirationTimestamp' => Carbon::parse($this->freshPayment()->expirationDate)->timestamp,
-            'formattedTimeLeft' => gmdate('i:s', max(0, $this->timeLeft)),
+            'formattedTimeLeft' => self::formatTimeLeft($this->timeLeft),
             'urgent' => $this->timeLeft <= 60,
         ]);
     }

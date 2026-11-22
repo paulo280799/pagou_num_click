@@ -6,6 +6,10 @@ use App\Livewire\PaymentPage;
 Route::get('/checkout/{id}', PaymentPage::class)
     ->name('checkout.show');
 
+Route::get('/checkout/{id}/card-config', [CardPaymentController::class, 'config'])
+    ->middleware('throttle:card-config')
+    ->name('checkout.card-config');
+
 Route::post('/checkout/{id}/pay-card', [CardPaymentController::class, 'store'])
     ->middleware('throttle:pay-card')
     ->name('checkout.pay-card');

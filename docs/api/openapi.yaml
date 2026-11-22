@@ -37,7 +37,8 @@ paths:
         | `["pix"]` | somente Pix (QR code + copia e cola) |
         | `["credit_card"]` | somente cartão (nenhum pedido PIX é criado) |
 
-        - `credit_card` exige cartão habilitado na conta; pedido explicitamente sem estar habilitado → `422`.
+        - `credit_card` exige cartão habilitado na conta (chave pública em algum gateway); pedido explicitamente sem estar habilitado → `422`.
+        - **Redundância:** se o Pagar.me falhar por infraestrutura (timeout, conexão, 5xx, 429, ou 2xx com cobrança `failed`/sem QR), o PIX é criado no Mercado Pago e a resposta é o `201` normal (`gateway: mercadopago`). 4xx de validação não aciona o fallback. Os dois fora → `503`. No fallback a validade do PIX é de no mínimo 30 minutos.
         - O valor cobrado é a soma de `amount × quantity` de todos os `items`.
         - O prazo de validade do checkout vem da configuração da conta (`duration`).
         - `refExternal` é único por conta: repetir o valor → `422`. Use-o como chave de idempotência do seu lado.
@@ -119,6 +120,7 @@ paths:
                 $ref: '#/components/schemas/CreatePaymentResponse'
               example:
                 payment_link: https://seu-dominio.com/checkout/0b5b0b42-5ab2-4e4c-9f0e-3d1a8f6a1c11
+                gateway: pagarme
         '401':
           description: Token ausente ou inválido, ou conta sem usuário.
           content:
@@ -163,12 +165,23 @@ paths:
                     errors:
                       payment_methods:
                         - O meio credit_card não está disponível.
+        '503':
+          description: Os dois provedores (Pagar.me e Mercado Pago) estão indisponíveis. Nenhum pagamento foi criado; reenvie o mesmo `refExternal`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderError'
+              example:
+                success: false
+                message: Erro ao processar pagamento
+                errors: []
+                gateway: mercadopago
         '500':
           description: Erro inesperado. Tente novamente; use um `refExternal` novo só se o
             anterior não tiver gerado pagamento.
         4XX:
           description: Erro devolvido pelo provedor de pagamento ao criar o pedido (mesmo
-            status HTTP do provedor).
+            status HTTP do provedor). Inclui o campo aditivo `gateway`.
           content:
             application/json:
               schema:
@@ -335,6 +348,14 @@ components:
           type: string
           format: uri
           description: URL do checkout hospedado. Envie o pagador para ela.
+        gateway:
+          type: string
+          enum:
+            - pagarme
+            - mercadopago
+          description: Provedor que criou o PIX. O Mercado Pago só é usado quando o Pagar.me
+            está indisponível. Ausente em checkout só-cartão (nenhuma chamada ao provedor na
+            criação).
     UnauthorizedError:
       type: object
       properties:
@@ -365,6 +386,12 @@ components:
           example: Erro ao processar pagamento
         errors:
           description: Corpo de erro do provedor, repassado como veio.
+        gateway:
+          type: string
+          enum:
+            - pagarme
+            - mercadopago
+          description: Provedor que originou o erro (aditivo).
     WebhookPayload:
       type: object
       properties:

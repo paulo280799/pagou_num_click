@@ -8,8 +8,8 @@ Cria uma cobrança e devolve o link do checkout hospedado. É o único endpoint 
 ## Fluxo
 
 ```
-Seu sistema ── POST /api/create-payment ──▶ Pagou num Click ──(PIX)──▶ provedor (cria pedido PIX)
-            ◀── 201 { payment_link } ──────┘
+Seu sistema ── POST /api/create-payment ──▶ Pagou num Click ──(PIX)──▶ Pagar.me (ou Mercado Pago, se o Pagar.me falhar)
+            ◀── 201 { payment_link, gateway } ┘
 Pagador ───── abre payment_link ──▶ checkout (Pix e/ou Cartão)
 Pagou num Click ── webhook POST notification_url { payment_id, status } ──▶ Seu sistema
 ```
@@ -57,7 +57,7 @@ O valor cobrado é a soma de `amount × quantity` de todos os itens.
 
 Regras:
 
-- Pedir `credit_card` explicitamente sem o cartão estar habilitado no ambiente (`STONE_PUBLIC_KEY_INTEGRATION` ausente) → `422` imediato, sem criar nada. Com `payment_methods` omitido, a falta de cartão apenas faz o checkout aparecer só com Pix.
+- Pedir `credit_card` explicitamente sem o cartão estar habilitado no ambiente (nenhum gateway com chave pública: `STONE_PUBLIC_KEY_INTEGRATION` ou `MP_PUBLIC_KEY` ausentes) → `422` imediato, sem criar nada. Com `payment_methods` omitido, a falta de cartão apenas faz o checkout aparecer só com Pix.
 - O meio escolhido fica gravado no pagamento (`payments.payment_methods`) e não muda depois. Pagamentos anteriores a esta funcionalidade (`null`) aceitam PIX e cartão.
 - Pix e cartão não são exclusivos em um mesmo checkout: o pagador paga por **um**; o primeiro que for aprovado fecha o pagamento. Em checkout com os dois, o PIX não é cancelável no provedor, ele só expira (ver `docs/pagarme/`).
 
@@ -70,10 +70,10 @@ O tempo do checkout vem da configuração da conta (`duration`, em segundos). Pa
 ### `201 Created`
 
 ```json
-{ "payment_link": "https://seu-dominio.com/checkout/0b5b0b42-5ab2-4e4c-9f0e-3d1a8f6a1c11" }
+{ "payment_link": "https://seu-dominio.com/checkout/0b5b0b42-5ab2-4e4c-9f0e-3d1a8f6a1c11", "gateway": "pagarme" }
 ```
 
-Redirecione o pagador para essa URL.
+Redirecione o pagador para essa URL. `gateway` (`pagarme` ou `mercadopago`) diz qual provedor criou o PIX: o Mercado Pago só entra quando o Pagar.me está indisponível, e o pagador não percebe a troca. Campo aditivo; ausente em checkout só-cartão (que não chama o provedor na criação).
 
 ### `401`
 
@@ -95,12 +95,20 @@ Sempre JSON, mesmo sem `Accept: application/json`. Formato Laravel: mensagem pri
 ### `422` / `4xx` — provedor ou meio indisponível
 
 ```json
-{ "success": false, "message": "Erro ao processar pagamento", "errors": [] }
+{ "success": false, "message": "Erro ao processar pagamento", "errors": [], "gateway": "pagarme" }
 ```
 
+`gateway` é o provedor que originou o erro (aditivo). `errors` continua sendo o corpo do provedor, repassado como veio.
+
 - `credit_card` pedido sem estar habilitado → `422`, `errors.payment_methods`.
-- Provedor recusou o pedido (HTTP de erro): mesmo status HTTP, `errors` traz o corpo do provedor.
-- Provedor respondeu 2xx mas com cobrança `failed` ou sem QR code (PIX) → `422`. Nenhum pagamento é criado nesses casos, então o mesmo `refExternal` pode ser reenviado.
+- Provedor recusou o pedido por validação (400/422): mesmo status HTTP, `errors` traz o corpo do provedor. **Não** aciona o Mercado Pago (seria esconder um erro do pedido).
+- Falha de infraestrutura do Pagar.me (timeout, conexão, 5xx, 429, ou 2xx com cobrança `failed`/sem QR code) → o PIX é criado no **Mercado Pago**, e a resposta é o `201` normal. Só quando o Mercado Pago também falha (ou não está configurado) o erro volta ao cliente.
+- Os dois provedores indisponíveis → `503` com o corpo acima. Se o Mercado Pago não estiver configurado, o erro do Pagar.me volta como sempre (status do provedor; 2xx com cobrança `failed`/sem QR → `422`).
+- Nenhum pagamento é criado em nenhum desses casos, então o mesmo `refExternal` pode ser reenviado.
+
+### Validade no fallback
+
+O Mercado Pago só aceita PIX com validade mínima de 30 minutos. Se a `duration` da conta for menor, o PIX criado pelo fallback vale 30 minutos e o checkout mostra essa validade real.
 
 ## Exemplos
 

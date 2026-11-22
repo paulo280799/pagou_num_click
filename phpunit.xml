@@ -24,6 +24,9 @@
         <env name="DB_CONNECTION" value="mysql"/>
         <env name="DB_DATABASE" value="testing"/>
         <env name="MAIL_MAILER" value="array"/>
+        <!-- credenciais do Mercado Pago do .env local não podem vazar para a suíte: o failover nasce desligado e os testes ligam com config() -->
+        <env name="MP_ACCESS_TOKEN" value=""/>
+        <env name="MP_PUBLIC_KEY" value=""/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

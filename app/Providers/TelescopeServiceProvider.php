@@ -37,12 +37,13 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
     protected function hideSensitiveRequestDetails(): void
     {
     
-        Telescope::hideRequestParameters(['_token', 'card_token', 'billing_address']);
+        Telescope::hideRequestParameters(['_token', 'card_token', 'token', 'billing_address', 'issuer_id', 'payment_method_id']);
 
         Telescope::hideRequestHeaders([
             'cookie',
             'x-csrf-token',
             'x-xsrf-token',
+            'authorization',
         ]);
     }
 

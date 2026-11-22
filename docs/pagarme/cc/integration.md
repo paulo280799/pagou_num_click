@@ -41,7 +41,7 @@ Decisões que moldam o desenho:
 | Validação | [PayCardRequest](../../../app/Http/Requests/PayCardRequest.php) | `card_token`, `installments`, `billing_address` (sem campo de valor) |
 | Cobrança | [CardPaymentController::store](../../../app/Http/Controllers/CardPaymentController.php) | Reserva a tentativa, chama a Pagar.me, aplica o resultado |
 | Mapper | [ChargeResult](../../../app/Support/ChargeResult.php), [ChargeOutcome](../../../app/Support/ChargeOutcome.php) | `last_transaction.status` → `PAID`/`DECLINED`/`PENDING_REVIEW`/`UNKNOWN` |
-| Cliente HTTP | [ApiService](../../../app/Services/ApiService.php) | `create_card_order` (com `Idempotency-Key` e timeout), `get_order`, `get_orders_by_code` |
+| Cliente HTTP | [PagarmeGateway](../../../app/Services/Gateways/PagarmeGateway.php) (antes `ApiService`) | `chargeCard` (com `Idempotency-Key` e timeout), `getCardStatus`, `findCardAttempt` |
 | Config | [config/integration.php](../../../config/integration.php) | `public_key`, `card_statement_descriptor`, `card_http_timeout` |
 | Polling | [ProcessPaymentController](../../../app/Http/Controllers/ProcessPaymentController.php) | Resolve tentativas em análise/timeout e vigia o PIX aberto |
 | Checkout | [PaymentStatusPending](../../../app/Livewire/PaymentStatusPending.php), [card-form.blade.php](../../../resources/views/livewire/partials/card-form.blade.php), [card-form.js](../../../resources/js/card-form.js) | Abas Pix \| Cartão e formulário |
@@ -100,7 +100,7 @@ Três fases; nenhum lock fica preso durante a chamada externa.
 
 Senão grava `card_attempt_key` (UUID novo, **ou a anterior se a tentativa deu timeout**, para reenvio idempotente) e `card_attempt_started_at = now()`.
 
-**Fase 2 — cobrar** (`ApiService::create_card_order`, sem lock). Header `Idempotency-Key: <card_attempt_key>` e timeout `CARD_HTTP_TIMEOUT` (15 s). Corpo:
+**Fase 2 — cobrar** (`PagarmeGateway::chargeCard`, sem lock). Header `Idempotency-Key: <card_attempt_key>` e timeout `CARD_HTTP_TIMEOUT` (15 s). Corpo:
 
 | Campo enviado à Pagar.me | Origem / regra |
 | :-- | :-- |

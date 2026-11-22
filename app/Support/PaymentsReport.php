@@ -12,7 +12,7 @@ use Illuminate\Support\Carbon;
 class PaymentsReport
 {
     private const HEADER = [
-        'Referência', 'ID', 'Meio', 'Valor', 'Status', 'Tarifa (%)', 'Tarifa (R$)', 'Líquido', 'Criado em', 'Pago em',
+        'Referência', 'ID', 'Meio', 'Valor', 'Status', 'Tarifa (%)', 'Tarifa (R$)', 'Líquido', 'Criado em', 'Pago em', 'Gateway',
     ];
 
     public function __construct(private readonly DashboardPeriodEnum $period) {}
@@ -53,6 +53,7 @@ class PaymentsReport
             $paid ? self::money($payment->amount - ($fee['amount'] ?? 0)) : '',
             $payment->created_at?->format('d/m/Y H:i') ?? '',
             $payment->paymentDate ? Carbon::parse($payment->paymentDate)->format('d/m/Y H:i') : '',
+            $payment->gateway?->getLabel() ?? '',
         ];
     }
 

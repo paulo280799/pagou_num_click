@@ -5,15 +5,17 @@ namespace App\Http\Controllers;
 use App\Enums\PaymentMethodEnum;
 use App\Enums\StatusPaymentEnum;
 use App\Models\Payment;
-use App\Services\ApiService;
+use App\Services\Gateways\GatewayManager;
 use App\Support\ChargeOutcome;
 use App\Support\ChargeResult;
-use Illuminate\Http\Client\ConnectionException;
+use App\Support\Gateways\GatewayUnavailableException;
+use App\Support\Gateways\NormalizedStatus;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class ProcessPaymentController extends Controller
 {
-    public function __construct(private Payment $payment, private ApiService $apiService) {}
+    public function __construct(private Payment $payment, private GatewayManager $gateways) {}
 
     public function index()
     {
@@ -25,13 +27,27 @@ class ProcessPaymentController extends Controller
         foreach ($payments as $payment) {
             try {
                 $this->processPayment($payment);
-            } catch (ConnectionException $e) {
+            } catch (GatewayUnavailableException $e) {
                 // provedor fora do ar não pode travar os demais pagamentos
-                Log::warning("Polling: falha de conexão com o provedor; payment={$payment->id}");
+                Log::warning("Polling: provedor indisponível ({$e->getMessage()}); payment={$payment->id}");
             }
         }
 
         $this->watchOpenPixOfCardPayments();
+    }
+
+    /** Reavalia um único pagamento (webhook do provedor): mesma regra do polling, sem esperar o scheduler. */
+    public function processOne(Payment $payment): void
+    {
+        if ($payment->status !== StatusPaymentEnum::PENDING) {
+            return;
+        }
+
+        try {
+            $this->processPayment($payment);
+        } catch (GatewayUnavailableException $e) {
+            Log::warning("Webhook: provedor indisponível ({$e->getMessage()}); payment={$payment->id}");
+        }
     }
 
     private function processPayment(Payment $payment): void
@@ -52,7 +68,7 @@ class ProcessPaymentController extends Controller
         }
 
         if ($payment->expirationDate < now()) {
-            $payment->update(['status' => StatusPaymentEnum::CANCELED]);
+            $this->expire($payment);
 
             return;
         }
@@ -62,35 +78,78 @@ class ProcessPaymentController extends Controller
             return;
         }
 
-        $response = $this->apiService->get_order($payment->ide);
+        $this->applyPixStatus($payment, $this->gateways->pixStatus($payment));
+    }
 
-        $paymentStatusFromApi = $response['status'] ?? null;
+    /**
+     * Vencido localmente: antes de cancelar pergunta ao gateway (PIX pago no último segundo, ou durante uma queda,
+     * não pode virar CANCELED). Gateway indisponível adia o cancelamento por uma janela de graça.
+     */
+    private function expire(Payment $payment): void
+    {
+        if ($payment->ide) {
+            try {
+                $this->applyPixStatus($payment, $this->gateways->pixStatus($payment));
+            } catch (GatewayUnavailableException $e) {
+                $graceEnd = Carbon::parse($payment->expirationDate)->addMinutes((int) config('gateways.expiry_grace_minutes'));
 
-        if (! $paymentStatusFromApi) {
+                if (now()->lt($graceEnd)) {
+                    return;
+                }
+
+                Log::warning("Polling: janela de graça esgotada, cancelando sem confirmar com o provedor; payment={$payment->id}");
+            }
+
+            // o gateway disse PAID/FAILED/CANCELED: já aplicado
+            if ($payment->refresh()->status !== StatusPaymentEnum::PENDING) {
+                return;
+            }
+        }
+
+        $payment->update(['status' => StatusPaymentEnum::CANCELED]);
+    }
+
+    private function applyPixStatus(Payment $payment, NormalizedStatus $status): void
+    {
+        if ($status->rawStatus === null) {
             // Se não houver status no retorno da API, pula para o próximo
             return;
         }
 
-        $paymentStatusEnum = StatusPaymentEnum::tryFrom(strtoupper($paymentStatusFromApi));
+        $this->logWhenStatusChanges($payment, $status);
 
-        if (! $paymentStatusEnum) {
-            // Status inválido ou desconhecido — você pode logar isso, se quiser
-            return;
-        }
-
-        match ($paymentStatusEnum) {
+        match ($status->status) {
             StatusPaymentEnum::PAID => $payment->update($payment->feeAttributesFor(PaymentMethodEnum::PIX) + [
-                'status' => $paymentStatusEnum,
+                'status' => StatusPaymentEnum::PAID,
                 'paymentDate' => now(),
             ]),
 
             StatusPaymentEnum::FAILED,
             StatusPaymentEnum::CANCELED => $payment->update([
-                'status' => $paymentStatusEnum,
+                'status' => $status->status,
             ]),
 
-            default => null // Caso queira tratar PENDING_REFUND, REFUNDED, etc., adicione aqui
+            default => null // PENDING, estorno/chargeback (só log) e desconhecidos não mudam o Payment
         };
+    }
+
+    /**
+     * O polling roda a cada 10 s: o status cru só é logado quando muda desde a última leitura
+     * (`provider_status`). `pending`/`waiting_payment` são conhecidos e não logam.
+     */
+    private function logWhenStatusChanges(Payment $payment, NormalizedStatus $status): void
+    {
+        if (! $payment->recordProviderStatus($status->rawStatus, $status->rawDetail)) {
+            return;
+        }
+
+        $gateway = $payment->pixGatewayOwner()->value;
+
+        if ($status->isUnsupported()) {
+            Log::error("Polling: status sem tratamento no sistema (estorno/chargeback?); gateway={$gateway} status={$status->rawStatus} detail={$status->rawDetail} payment={$payment->id}");
+        } elseif (! $status->isKnown()) {
+            Log::warning("Polling: status desconhecido; gateway={$gateway} status={$status->rawStatus} detail={$status->rawDetail} payment={$payment->id}");
+        }
     }
 
     /**
@@ -100,21 +159,20 @@ class ProcessPaymentController extends Controller
     {
         try {
             if ($payment->card_order_id) {
-                $response = $this->apiService->get_order($payment->card_order_id);
-                $data = $response->successful() ? $response->json() : null;
+                $result = $this->gateways->cardStatus($payment);
             } else {
-                $data = $this->reconcileTimedOutAttempt($payment);
-                if ($data === false) {
+                $result = $this->reconcileTimedOutAttempt($payment);
+                if ($result === false) {
                     return;
                 }
             }
-        } catch (ConnectionException $e) {
+        } catch (GatewayUnavailableException $e) {
             Log::warning("Polling cartão: falha de conexão; payment={$payment->id}");
 
             return;
         }
 
-        if ($data === null) {
+        if ($result === null) {
             // timeout sem pedido no provedor: libera a chave para nova tentativa
             if (! $payment->card_order_id) {
                 $payment->releaseCardAttempt();
@@ -122,8 +180,6 @@ class ProcessPaymentController extends Controller
 
             return;
         }
-
-        $result = ChargeResult::fromOrderResponse($data);
 
         switch ($result->outcome) {
             case ChargeOutcome::PAID:
@@ -135,15 +191,17 @@ class ProcessPaymentController extends Controller
                 break;
 
             default:
-                Log::warning("Polling cartão: em análise/desconhecido; payment={$payment->id} order={$result->orderId} tx_status={$result->transactionStatus}");
+                if ($payment->recordProviderStatus($result->rawStatus, $result->rawDetail)) {
+                    Log::warning("Polling cartão: em análise/desconhecido; gateway={$payment->cardGatewayOwner()->value} payment={$payment->id} order={$result->orderId} tx_status={$result->transactionStatus} detail={$result->rawDetail}");
+                }
         }
     }
 
     /**
      * Tentativa com chave gravada e sem card_order_id, mais antiga que a janela de timeout.
-     * Retorna o pedido (array), null se não existe no provedor, false se ainda dentro da janela.
+     * Retorna o resultado, null se não existe no provedor, false se ainda dentro da janela ou a busca não foi conclusiva.
      */
-    private function reconcileTimedOutAttempt(Payment $payment): array|null|false
+    private function reconcileTimedOutAttempt(Payment $payment): ChargeResult|null|false
     {
         $window = config('integration.card_http_timeout') + 5;
 
@@ -151,23 +209,15 @@ class ProcessPaymentController extends Controller
             return false;
         }
 
-        $response = $this->apiService->get_orders_by_code($payment->id);
-
-        if (! $response->successful()) {
+        try {
+            return $this->gateways->findCardAttempt($payment);
+        } catch (GatewayUnavailableException) {
             return false;
         }
-
-        foreach ($response->json('data') ?? [] as $order) {
-            if (data_get($order, 'metadata.payment_id') === $payment->id) {
-                return $order;
-            }
-        }
-
-        return null;
     }
 
     /**
-     * PIX não é cancelável na Pagar.me: após cartão aprovado, vigia o PIX até expirar (+5 min).
+     * PIX não é cancelável no Pagar.me: após cartão aprovado, vigia o PIX até expirar (+5 min).
      */
     private function watchOpenPixOfCardPayments(): void
     {
@@ -181,12 +231,12 @@ class ProcessPaymentController extends Controller
 
         foreach ($payments as $payment) {
             try {
-                $response = $this->apiService->get_order($payment->ide);
-            } catch (ConnectionException $e) {
+                $status = $this->gateways->pixStatus($payment);
+            } catch (GatewayUnavailableException) {
                 continue;
             }
 
-            if (strtoupper((string) ($response['status'] ?? '')) === 'PAID') {
+            if ($status->status === StatusPaymentEnum::PAID) {
                 Log::error("PIX pago em Payment já pago no cartão (estorno manual); payment={$payment->id} ide={$payment->ide} card_order={$payment->card_order_id}");
             }
         }

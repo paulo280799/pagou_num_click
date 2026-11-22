@@ -254,7 +254,7 @@ Testado com chaves `sk_test_`/`pk_test_` do projeto:
 
 - Cartão **Elo** em *payment link*: desde 17/10/2025 o campo `channel` deve ser `payment_link`.
 - `metadata` aceita chave/valor livres para guardar contexto (ex.: `refExternal`).
-- Cartão usa a mesma estrutura de pedido/cobrança do PIX, então `ApiService::create_order` / `get_order` já servem; muda o corpo e o mapeamento de status.
+- Cartão usa a mesma estrutura de pedido/cobrança do PIX, então o `PagarmeGateway` (`createPix`/`getPixStatus` e `chargeCard`/`getCardStatus`) já serve; muda o corpo e o mapeamento de status.
 
 ## Simulador de cartões (documentação oficial vs. observado)
 
