@@ -59,6 +59,23 @@ class GatewayCredentialsPageTest extends TestCase
         $this->assertNotNull($row->last_validated_at);
     }
 
+    public function test_saved_secrets_show_a_masked_preview_in_their_fields(): void
+    {
+        Http::fake(['*' => Http::response([], 200)]);
+
+        $page = Livewire::test(GatewayCredentialsPage::class)
+            ->assertSeeHtml('placeholder="Cole a chave secreta"')   // nada salvo ainda
+            ->fillForm(['pagarme_user' => 'sk_test_SEGREDO9999', 'pagarme_password' => 'senha-secreta-77', 'pagarme_public_key' => 'pk_test_abc', 'mp_access_token' => 'TEST-mp-token-5555', 'mp_webhook_secret' => 'whsec-abcd'])
+            ->call('save');
+
+        $page->assertSeeHtml('placeholder="Salva: ••••9999"')
+            ->assertSeeHtml('placeholder="Salva: ••••••••"')          // senha: só "salva", sem caracteres
+            ->assertSeeHtml('placeholder="Salva: ••••5555"')
+            ->assertSeeHtml('placeholder="Salva: ••••abcd"')
+            ->assertDontSee('SEGREDO9999')->assertDontSee('senha-secreta-77')->assertDontSee('mp-token-5555')
+            ->assertFormSet(['pagarme_public_key' => 'pk_test_abc']);  // chave pública não é segredo: volta preenchida
+    }
+
     public function test_blank_secret_keeps_the_stored_one(): void
     {
         Http::fake(['*/v5/orders*' => Http::response([], 200)]);

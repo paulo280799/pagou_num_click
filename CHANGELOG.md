@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (30)
+- **Página Gateways: prévia do que está salvo (achado na validação manual).** Os campos secretos voltam vazios (por segurança, "em branco = manter") e isso parecia que nada tinha sido salvo. Agora mostram um placeholder `Salva: ••••9999` (4 últimos caracteres da chave/token/segredo; da senha da API só `Salva: ••••••••`) e o texto "Em branco, mantém ...". Chave pública não é segredo e continua voltando preenchida. O valor completo nunca vai para a tela. Teste `test_saved_secrets_show_a_masked_preview_in_their_fields`.
+
 ## 2026-11-22 (29)
 - **Correção (achada na validação manual): campo "Token de acesso" aparecia vazio.** O Filament preenche o campo com o valor do registro (`api_token`, que agora é nulo porque só o hash existe) e isso sobrescrevia o `default()`; passou a `afterStateHydrated`, que mostra o prefixo mascarado (`pnc_XErl••••`). Logo depois de "Regenerar token" o token inteiro fica no campo e aparece um botão de copiar (ação de sufixo; `copyable()` não existe em campos de formulário); mascarado, o botão não aparece. Teste do estado do campo ao abrir e após regenerar.
 

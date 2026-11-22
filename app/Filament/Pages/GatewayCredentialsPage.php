@@ -72,6 +72,22 @@ class GatewayCredentialsPage extends Page implements HasForms
         return GatewayCredential::where('gateway', $gateway->value)->first();
     }
 
+    /**
+     * Prévia do segredo guardado, para o campo (vazio = "manter") não parecer que nada foi salvo.
+     * Nunca devolve o valor: só os 4 últimos caracteres da chave; da senha, apenas "salva".
+     */
+    private function savedPreview(GatewayEnum $gateway, string $field, string $empty): string
+    {
+        $row = $this->row($gateway);
+        $value = (string) ($row?->credentials[$field] ?? '');
+
+        if ($value === '') {
+            return $empty;
+        }
+
+        return $field === 'password' ? 'Salva: ••••••••' : 'Salva: '.$row->hint($field);
+    }
+
     private function statusLine(GatewayEnum $gateway): HtmlString
     {
         $row = $this->row($gateway);
@@ -131,8 +147,12 @@ class GatewayCredentialsPage extends Page implements HasForms
                     ->schema([
                         Placeholder::make('pagarme_status')->hiddenLabel()->content(fn () => $this->statusLine(GatewayEnum::PAGARME))->columnSpanFull(),
                         Toggle::make('pagarme_enabled')->label('Ativo')->columnSpanFull(),
-                        TextInput::make('pagarme_user')->label('Chave secreta (sk_...)')->password()->autocomplete(false)->maxLength(255),
-                        TextInput::make('pagarme_password')->label('Senha da API (se houver)')->password()->autocomplete(false)->maxLength(255),
+                        TextInput::make('pagarme_user')->label('Chave secreta (sk_...)')->password()->autocomplete(false)->maxLength(255)
+                            ->placeholder(fn () => $this->savedPreview(GatewayEnum::PAGARME, 'user', 'Cole a chave secreta'))
+                            ->helperText('Em branco, mantém a chave salva.'),
+                        TextInput::make('pagarme_password')->label('Senha da API (se houver)')->password()->autocomplete(false)->maxLength(255)
+                            ->placeholder(fn () => $this->savedPreview(GatewayEnum::PAGARME, 'password', 'Opcional'))
+                            ->helperText('Em branco, mantém a senha salva.'),
                         TextInput::make('pagarme_public_key')->label('Chave pública (pk_...) — habilita o cartão')->maxLength(255)->columnSpanFull()
                             ->helperText('Deve ser do mesmo ambiente (teste/produção) da chave secreta.'),
                     ]),
@@ -144,8 +164,12 @@ class GatewayCredentialsPage extends Page implements HasForms
                     ->schema([
                         Placeholder::make('mp_status')->hiddenLabel()->content(fn () => $this->statusLine(GatewayEnum::MERCADOPAGO))->columnSpanFull(),
                         Toggle::make('mp_enabled')->label('Ativo')->columnSpanFull(),
-                        TextInput::make('mp_access_token')->label('Access token')->password()->autocomplete(false)->maxLength(255),
-                        TextInput::make('mp_webhook_secret')->label('Segredo do webhook')->password()->autocomplete(false)->maxLength(255),
+                        TextInput::make('mp_access_token')->label('Access token')->password()->autocomplete(false)->maxLength(255)
+                            ->placeholder(fn () => $this->savedPreview(GatewayEnum::MERCADOPAGO, 'access_token', 'Cole o access token'))
+                            ->helperText('Em branco, mantém o token salvo.'),
+                        TextInput::make('mp_webhook_secret')->label('Segredo do webhook')->password()->autocomplete(false)->maxLength(255)
+                            ->placeholder(fn () => $this->savedPreview(GatewayEnum::MERCADOPAGO, 'webhook_secret', 'Cole o segredo do webhook'))
+                            ->helperText('Em branco, mantém o segredo salvo.'),
                         TextInput::make('mp_public_key')->label('Chave pública — habilita o cartão')->maxLength(255)->columnSpanFull(),
                         Placeholder::make('mp_webhook_url')
                             ->label('URL do webhook (cadastre no painel do Mercado Pago, tópico de ordens)')
