@@ -12,7 +12,7 @@ Full technical documentation (flow diagrams, data model, API contract, scheduler
 
 - Stack: PHP ^8.1, Laravel 10, Filament 3.3 (panel), Livewire 3 (checkout UI), Sanctum, Telescope, Guzzle HTTP client, Vite + Tailwind 3.
 - DB: MySQL via Laravel Sail. All IDs are UUIDs.
-- Payment provider: v5 orders/charges REST API with Basic Auth (Pagar.me/Mundipagg-shaped). Base URL/credentials come from `.env` (`URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION`).
+- Payment providers: **Pagar.me** (primary; v5 orders/charges REST API with Basic Auth; `URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION`) and **Mercado Pago** (redundancy, Orders API `/v1/orders`; used only when Pagar.me fails, requires `MP_ACCESS_TOKEN`). Everything goes through `GatewayManager` (`app/Services/Gateways/`), never straight to a provider.
 - Locale: UI in Portuguese; `timezone = America/Sao_Paulo`, `locale = en`.
 
 ## Environment
@@ -46,7 +46,7 @@ npm install && npm run build            # or `npm run dev` for Vite HMR
 "
 ```
 
-Required project-specific env vars beyond Laravel defaults (see `docker-compose.yml` for the DB ones Sail expects — `DB_HOST=mysql`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`): `URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION` (payment provider — without real credentials, `/api/create-payment` will fail at the HTTP call to the provider with a connection error, but everything before that, auth, validation, DB write, is exercised and works), `WEBHOOK_SECRET`, `APP_URL`. Card payments additionally need `STONE_PUBLIC_KEY_INTEGRATION` (the `pk_...` public key exposed to the browser for tokenization; must be from the same environment as `USER_INTEGRATION`; without it the card tab does not render) and optionally `CARD_STATEMENT_DESCRIPTOR` (≤13 chars) and `CARD_HTTP_TIMEOUT` (15 s). `APP_KEY` must be stable: `payments.customer` is stored with `encrypted:array`.
+Required project-specific env vars beyond Laravel defaults (see `docker-compose.yml` for the DB ones Sail expects — `DB_HOST=mysql`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`): `URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION` (Pagar.me — without real credentials, `/api/create-payment` will fail at the HTTP call to the provider and answer `503` (or the provider's status), but everything before that, auth, validation, is exercised and works), `WEBHOOK_SECRET`, `APP_URL`. Optional Mercado Pago failover: `MP_ACCESS_TOKEN` (without it the failover is off and behavior is Pagar.me-only), `MP_PUBLIC_KEY` (card fallback; MP does PIX only without it), `MP_ITEM_CATEGORY` (items.category_id, default `others`), `MP_WEBHOOK_SECRET` (incoming MP webhook `POST /api/webhooks/mercadopago`; without it the endpoint answers 401), `MP_ENABLED`, `MP_URL`, `MP_HTTP_TIMEOUT`, `GATEWAY_CREATE_TIMEOUT` (5 s), `GATEWAY_CIRCUIT_FAILURES`/`_WINDOW`/`_COOLDOWN`, `GATEWAY_EXPIRY_GRACE_MINUTES` — see `config/gateways.php` and DOCUMENTACAO.md §7. No Pagar.me env var was renamed (production is shared hosting without SSH). Card payments additionally need `STONE_PUBLIC_KEY_INTEGRATION` (or `MP_PUBLIC_KEY`) (the `pk_...` public key exposed to the browser for tokenization; must be from the same environment as `USER_INTEGRATION`; without it the card tab does not render) and optionally `CARD_STATEMENT_DESCRIPTOR` (≤13 chars) and `CARD_HTTP_TIMEOUT` (15 s). `APP_KEY` must be stable: `payments.customer` is stored with `encrypted:array`.
 
 **Port 80 conflict**: if the host already has something bound to port 80 (e.g. a system Apache/nginx), Sail's `laravel.test` container will silently lose that port — `docker ps` shows the mapping, but the host service answers first and you'll get a misleading 404 instead of Laravel's response. Check with `ss -tlnp | grep ':80 '`; if occupied, set `APP_PORT=8080` (or any free port) in `.env` and match it in `APP_URL`, then `./vendor/bin/sail up -d` again to recreate the container with the new mapping.
 
@@ -78,21 +78,26 @@ PHPUnit, configured in [phpunit.xml](phpunit.xml). The suite covers the PIX flow
 
 ```
 Client system → POST /api/create-payment (Bearer token, middleware api.token; optional payload `payment_methods`: pix | credit_card | both)
-             → CheckoutController creates order via ApiService (provider v5 orders; skipped for card-only → ide/qrCode NULL) → Payment row (PENDING)
-             → responds { payment_link: APP_URL/checkout/{payment.id} }
+             → CheckoutController pre-generates the Payment UUID, GatewayManager::createPix: Pagar.me first (short timeout), Mercado Pago on infra failure (conn/timeout/5xx/429/200+failed) or open circuit breaker; 4xx never fails over;
+               both down → 503 and no Payment (skipped for card-only → ide/qrCode NULL) → Payment row (PENDING, pix_gateway)
+             → responds { payment_link: APP_URL/checkout/{payment.id}, gateway }
 
 Payer opens /checkout/{id} → Livewire PaymentPage (polls every 5s while PENDING), tabs Pix | Cartão
   Card tab: Alpine form inside wire:ignore (card data never touches Livewire/Laravel)
-    → browser tokenizes at api.pagar.me/core/v5/tokens (public key) → card_token (1 min, single use)
-    → POST /checkout/{id}/pay-card (web route, CSRF, throttle:pay-card)
-    → CardPaymentController: lock + Idempotency-Key → POST /v5/orders (credit_card) → ChargeResult → PAID | declined 422 | processing 202/503
+    → GET /checkout/{id}/card-config at submit (current gateway; the render-time config is frozen by wire:ignore)
+    → browser tokenizes at the gateway (Pagar.me /tokens or Mercado Pago SDK) → card_token (single use, valid only at that gateway)
+    → POST /checkout/{id}/pay-card {gateway, ...} (web route, CSRF, throttle:pay-card)
+    → CardPaymentController: stale gateway → 503 {status:fallback} without charging; lock + card_attempt_key + card_gateway → chargeCard → ChargeResult → PAID | declined 422 | processing 202/503
+    → Pagar.me down mid-charge: only if lookup by code PROVES no charge exists → release attempt, {status:fallback, gateway:mercadopago}, browser re-tokenizes once; in doubt → "processing" (a double charge is worse than a failure)
 
 Scheduler (every 10s, withoutOverlapping, app/Console/Kernel.php):
-  app:process-payment  → ProcessPaymentController: for each PENDING payment first resolves any card attempt in progress (get_order / lookup by code), then polls the PIX order and updates status (or CANCELED if expired; never while a card attempt is unresolved); also watches the open PIX of card-paid payments until expiry+5min and logs an error if it gets paid (manual refund)
+  app:process-payment  → ProcessPaymentController: for each PENDING payment first resolves any card attempt in progress (get status / lookup by reference), then polls the PIX and updates status — routed by the OWNER of the external id (`pix_gateway` for `ide`, `card_gateway` for `card_order_id`/`card_attempt_key`; null = Pagar.me), never by the `Payment::gateway` accessor. When expired it asks the gateway before canceling (grace window `GATEWAY_EXPIRY_GRACE_MINUTES` if the gateway is down; never cancels while a card attempt is unresolved); raw provider status goes to `provider_status`/`provider_status_detail` and is logged only when it changes; also watches the open PIX of card-paid payments until expiry+5min and logs an error if it gets paid (manual refund)
   app:process-webhook  → WebhookController: for payments with is_notified=false and status != PENDING, POSTs to notification_url with backoff [60s, 5m, 10m, 30m, 1h], gives up after 5 attempts
 ```
 
-The card flow is a second attempt on the existing `Payment` (the PIX order stays the `ide`; the card order is `card_order_id`); the pending PIX cannot be canceled at the provider, it only expires. The amount charged is always read from the `Payment`, never from the request. `close_order` is intentionally unused. Provider failures come back as HTTP 200 with `charges[0].status = failed`, so never assume a 2xx means success: read `charges[0].last_transaction.status` via `ChargeResult`.
+The card flow is a second attempt on the existing `Payment` (the PIX order stays the `ide`; the card order is `card_order_id`); the pending PIX cannot be canceled at the provider, it only expires. The amount charged is always read from the `Payment`, never from the request. Provider failures come back as HTTP 200 (Pagar.me `charges[0].status = failed`; Mercado Pago 201 with `status = rejected`), so never assume a 2xx means success: read the normalized status — `PagarmeStatusMap`/`MercadoPagoStatusMap` → `NormalizedStatus`/`ChargeResult`. Card results never push a `Payment` to `FAILED`; a decline only releases the attempt.
+
+Gateways: each implements `PaymentGateway` and translates its own format/status at the edge; controllers and polling only talk to `GatewayManager`. Failover triggers only on infra failures (`GatewayUnavailableException`), never on 4xx validation (`GatewayRequestException`) or an issuer decline. `CircuitBreaker` lives in `Cache::` (never Redis; tests seed `Cache::put`/`flush`). Mercado Pago PIX has a 30 min minimum, so `expirationDate` is set to the same instant sent as `date_of_expiration`; MP card is 1x only until spike S4 (installments/interest) is done. Pending items (sandbox spikes S1–S13, MP fees S12, incoming MP webhook) are tracked in `.changes/mercado-pago-fallback/tasks.md`.
 
 Console commands in `app/Console/Commands/` are thin — they only delegate to the controllers above, which hold the actual logic.
 
@@ -118,7 +123,7 @@ accounts 1──N payments
 
 `Config` holds per-account settings (`duration` of PIX validity, `notification_url`, `redirect_url`, `api_token`). `Payment` snapshots `duration`, `redirect_url`, and `notification_url` from `Config` at creation time, so later `Config` edits don't retroactively affect in-flight payments.
 
-Status/method/type are backed by enums in `app/Enums/` (`StatusPaymentEnum`, `PaymentMethodEnum`, `TypeTransactionEnum` — the last is unused).
+Status/method/gateway/type are backed by enums in `app/Enums/` (`StatusPaymentEnum`, `PaymentMethodEnum`, `GatewayEnum`, `TypeTransactionEnum` — the last is unused). `payments.pix_gateway`/`card_gateway` record which gateway handled each medium; fees are per gateway (`Config` `mp_*` columns for Mercado Pago, resolved by `Payment::feeAttributesFor($method, $installments, ?GatewayEnum)`).
 
 ### Filament panel (`/admin`)
 

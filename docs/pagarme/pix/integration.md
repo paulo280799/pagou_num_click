@@ -33,7 +33,7 @@ Não há webhook **da** Pagar.me para nós: a confirmação de pagamento é feit
 | Auth | [ApiTokenMiddleware](../../../app/Http/Middleware/ApiTokenMiddleware.php) | Bearer → `Config` → primeiro `User` da conta → `loginUsingId` |
 | Validação | [CheckoutRequest](../../../app/Http/Requests/CheckoutRequest.php) | Corpo da requisição do cliente |
 | Criação | [CheckoutController::store](../../../app/Http/Controllers/CheckoutController.php) | Monta pedido, chama Pagar.me, grava `Payment` |
-| Cliente HTTP | [ApiService](../../../app/Services/ApiService.php) | `create_order`, `get_order`, `create_card_order`, `get_orders_by_code`, `close_order` (Basic Auth; `close_order` não é usado) |
+| Cliente HTTP | [PagarmeGateway](../../../app/Services/Gateways/PagarmeGateway.php) (implementa `PaymentGateway`; antes `ApiService`) | `createPix`, `chargeCard`, `getPixStatus`, `getCardStatus`, `findCardAttempt` (Basic Auth; `cancelPix` devolve `false`: o PIX não é cancelável) |
 | Config | [config/integration.php](../../../config/integration.php) | `URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION` |
 | Polling | [ProcessPaymentController](../../../app/Http/Controllers/ProcessPaymentController.php) | Via comando `app:process-payment` a cada 10 s |
 | Webhook saída | [WebhookController](../../../app/Http/Controllers/WebhookController.php) | Via comando `app:process-webhook` a cada 10 s |
@@ -148,7 +148,7 @@ Observações:
 
 - É uma chamada HTTP **sequencial por pagamento** a cada 10 s. Escala linearmente com o nº de PIX pendentes. Não há `withoutOverlapping`, então ciclos lentos podem sobrepor.
 - Falha de rede em `get_order` não é tratada explicitamente: `$response['status']` vira `null` e o pagamento é pulado.
-- O `close_order` do `ApiService` **não é usado**: ao cancelar localmente por expiração o pedido não é fechado na Pagar.me. Na prática o `expires_at` enviado coincide com a expiração local, então o PIX expira nos dois lados quase juntos.
+- O `close_order` (removido com o `ApiService`) **não era usado**: ao cancelar localmente por expiração o pedido não é fechado na Pagar.me. Na prática o `expires_at` enviado coincide com a expiração local, então o PIX expira nos dois lados quase juntos.
 - **Risco:** pagamento cancelado localmente (expiração) deixa de ser consultado. Se o pagador pagar no limite/atraso, o PIX pode ser aprovado na Pagar.me sem o sistema reconhecer.
 
 ## 4. Notificação ao sistema do cliente (webhook de saída)

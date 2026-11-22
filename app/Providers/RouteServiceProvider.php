@@ -32,6 +32,11 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinutes(10, 5)->by($request->ip().'|'.$request->route('id'));
         });
 
+        // lido a cada clique em "Pagar"; só devolve a chave pública do gateway vigente
+        RateLimiter::for('card-config', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip().'|'.$request->route('id'));
+        });
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')

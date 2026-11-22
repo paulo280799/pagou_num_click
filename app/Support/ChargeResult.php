@@ -2,6 +2,9 @@
 
 namespace App\Support;
 
+use App\Services\Gateways\MercadoPagoStatusMap;
+use App\Services\Gateways\PagarmeStatusMap;
+
 final class ChargeResult
 {
     public function __construct(
@@ -15,32 +18,23 @@ final class ChargeResult
         public readonly ?string $authCode = null,
         public readonly ?string $acquirerReturnCode = null,
         public readonly ?string $transactionStatus = null,
+        public readonly ?string $rawStatus = null,
+        public readonly ?string $rawDetail = null,
     ) {}
 
     /**
-     * Mapeia a resposta de um pedido de cartão. Fonte da verdade: charges[0].last_transaction.status.
-     * Acesso sempre defensivo: charge `failed` com HTTP 200 pode vir sem last_transaction.
+     * Mapeia a resposta de um pedido de cartão do Pagar.me (status em PagarmeStatusMap).
      */
     public static function fromOrderResponse(array $order): self
     {
-        $charge = data_get($order, 'charges.0');
-        $tx = data_get($charge, 'last_transaction');
-        $txStatus = data_get($tx, 'status');
-
-        $outcome = match (true) {
-            ! is_array($charge) => ChargeOutcome::UNKNOWN,
-            $txStatus === 'captured' => ChargeOutcome::PAID,
-            in_array($txStatus, ['not_authorized', 'failed', 'with_error'], true) => ChargeOutcome::DECLINED,
-            in_array($txStatus, ['authorized_pending_capture', 'waiting_capture', 'partial_capture'], true) => ChargeOutcome::PENDING_REVIEW,
-            $txStatus === null && data_get($charge, 'status') === 'failed' => ChargeOutcome::DECLINED,
-            default => ChargeOutcome::UNKNOWN,
-        };
+        $tx = data_get($order, 'charges.0.last_transaction');
+        [$rawStatus, $rawDetail] = PagarmeStatusMap::cardRaw($order);
 
         $lastFour = data_get($tx, 'card.last_four_digits');
         $installments = data_get($tx, 'installments');
 
         return new self(
-            outcome: $outcome,
+            outcome: PagarmeStatusMap::cardOutcome($order),
             orderId: data_get($order, 'id'),
             brand: data_get($tx, 'card.brand'),
             lastFour: $lastFour !== null ? (string) $lastFour : null,
@@ -49,7 +43,35 @@ final class ChargeResult
             nsu: data_get($tx, 'acquirer_nsu'),
             authCode: data_get($tx, 'acquirer_auth_code'),
             acquirerReturnCode: data_get($tx, 'acquirer_return_code') !== null ? (string) data_get($tx, 'acquirer_return_code') : null,
-            transactionStatus: $txStatus,
+            transactionStatus: data_get($tx, 'status'),
+            rawStatus: $rawStatus,
+            rawDetail: $rawDetail,
+        );
+    }
+
+    /**
+     * Mapeia um pagamento de cartão do Mercado Pago (Payments API). O resultado vem de `status`/`status_detail`.
+     * TID/NSU não têm campo confirmado (spike S7): só o código de autorização é preenchido.
+     */
+    /** Ordem do Mercado Pago (Orders API); a transação de cartão fica em `transactions.payments[0]`. */
+    public static function fromMercadoPagoOrder(array $order): self
+    {
+        $normalized = MercadoPagoStatusMap::cardNormalized($order);
+        $method = data_get($order, 'transactions.payments.0.payment_method', []);
+        $installments = data_get($method, 'installments');
+        $id = data_get($order, 'id');
+
+        return new self(
+            outcome: $normalized->outcome,
+            orderId: $id !== null ? (string) $id : null,
+            brand: data_get($method, 'id'),
+            lastFour: null,
+            installments: $installments !== null ? (int) $installments : null,
+            authCode: null,
+            acquirerReturnCode: $normalized->rawDetail,
+            transactionStatus: $normalized->rawStatus,
+            rawStatus: $normalized->rawStatus,
+            rawDetail: $normalized->rawDetail,
         );
     }
 }

@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Enums\GatewayEnum;
 use App\Enums\PaymentMethodEnum;
 use App\Enums\StatusPaymentEnum;
 use App\Models\Scopes\UserScope;
 use App\Support\ChargeResult;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,6 +22,10 @@ class Payment extends Model
     protected $fillable = [
         'id',
         'ide',
+        'pix_gateway',
+        'card_gateway',
+        'provider_status',
+        'provider_status_detail',
         'card_order_id',
         'card_attempt_key',
         'card_attempt_started_at',
@@ -34,6 +39,7 @@ class Payment extends Model
         'acquirer_nsu',
         'acquirer_auth_code',
         'customer',
+        'items',
         'qrCode',
         'copyPaste',
         'amount',
@@ -70,7 +76,10 @@ class Payment extends Model
     protected $casts = [
         'status' => StatusPaymentEnum::class,
         'payment_method' => PaymentMethodEnum::class,
+        'pix_gateway' => GatewayEnum::class,
+        'card_gateway' => GatewayEnum::class,
         'payment_methods' => 'array',
+        'items' => 'array',
         'fee_percent' => 'float',
         'fee_amount' => 'float',
         'customer' => 'encrypted:array',
@@ -78,6 +87,63 @@ class Payment extends Model
     ];
 
     protected $hidden = ['customer'];
+
+    /**
+     * Gateway que liquidou a venda (tarifa, painel, relatório): o do cartão se foi pago no cartão, senão o do PIX;
+     * se o escolhido for nulo, o outro. NUNCA usar para rotear chamada ao provedor: um cartão em análise ainda é
+     * `PIX` + `card_attempt_key` e devolveria o gateway errado. Roteamento usa pixGatewayOwner()/cardGatewayOwner().
+     */
+    public function getGatewayAttribute(): ?GatewayEnum
+    {
+        $settledOnCard = $this->payment_method === PaymentMethodEnum::CREDIT_CARD && $this->status === StatusPaymentEnum::PAID;
+
+        return $settledOnCard
+            ? ($this->card_gateway ?? $this->pix_gateway)
+            : ($this->pix_gateway ?? $this->card_gateway);
+    }
+
+    /** Filtro do painel: mesma regra do accessor `gateway` (gateway que liquidou a venda). */
+    public function scopeSettledOn(Builder $query, GatewayEnum $gateway): Builder
+    {
+        $g = $gateway->value;
+
+        return $query->where(function (Builder $q) use ($g) {
+            $q->where(fn (Builder $q) => $q
+                ->where('payment_method', PaymentMethodEnum::CREDIT_CARD->value)
+                ->where('status', StatusPaymentEnum::PAID->value)
+                ->where(fn (Builder $q) => $q->where('card_gateway', $g)->orWhere(fn (Builder $q) => $q->whereNull('card_gateway')->where('pix_gateway', $g))))
+                ->orWhere(fn (Builder $q) => $q
+                    ->where(fn (Builder $q) => $q->where('payment_method', '!=', PaymentMethodEnum::CREDIT_CARD->value)->orWhere('status', '!=', StatusPaymentEnum::PAID->value))
+                    ->where(fn (Builder $q) => $q->where('pix_gateway', $g)->orWhere(fn (Builder $q) => $q->whereNull('pix_gateway')->where('card_gateway', $g))));
+        });
+    }
+
+    /** Dono do `ide` (pedido PIX). Linhas anteriores à coluna ficam sem valor e são do Pagar.me. */
+    public function pixGatewayOwner(): GatewayEnum
+    {
+        return $this->pix_gateway ?? GatewayEnum::PAGARME;
+    }
+
+    /** Dono do `card_order_id`/`card_attempt_key` (tentativa de cartão). */
+    public function cardGatewayOwner(): GatewayEnum
+    {
+        return $this->card_gateway ?? GatewayEnum::PAGARME;
+    }
+
+    /**
+     * Grava o status cru do provedor. Retorna true quando mudou desde a última leitura
+     * (o polling roda a cada 10 s: só a mudança merece log).
+     */
+    public function recordProviderStatus(?string $status, ?string $detail): bool
+    {
+        if ($status === null || ($status === $this->provider_status && $detail === $this->provider_status_detail)) {
+            return false;
+        }
+
+        $this->update(['provider_status' => $status, 'provider_status_detail' => $detail]);
+
+        return true;
+    }
 
     /** Meios habilitados no checkout; payments legados (null) aceitam PIX e cartão. */
     public function allowsMethod(string $method): bool
@@ -108,13 +174,16 @@ class Payment extends Model
 
     /**
      * Tarifa a gravar quando o pagamento é confirmado (snapshot da Config da conta naquele momento).
-     * Sem tarifa configurada (cartão) grava null.
+     * Sem tarifa configurada (cartão, ou qualquer meio do Mercado Pago) grava null.
      *
      * @return array{fee_percent: ?float, fee_amount: ?float}
      */
-    public function feeAttributesFor(PaymentMethodEnum $method, ?int $installments = null): array
+    public function feeAttributesFor(PaymentMethodEnum $method, ?int $installments = null, ?GatewayEnum $gateway = null): array
     {
-        $percent = $this->accountConfig()?->feePercentFor($method, $installments);
+        // sem gateway explícito vale o que processou o meio; sem registro (legado/fixtures) é o Pagar.me, como sempre foi
+        $gateway ??= $method === PaymentMethodEnum::CREDIT_CARD ? $this->card_gateway : $this->pix_gateway;
+
+        $percent = $this->accountConfig()?->feePercentFor($method, $installments, $gateway ?? GatewayEnum::PAGARME);
 
         return [
             'fee_percent' => $percent,
@@ -181,5 +250,23 @@ class Payment extends Model
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);
+    }
+
+    /**
+     * Itens (centavos) a repassar ao gateway. Pagamentos antigos não têm itens gravados: vira um item único com o total.
+     *
+     * @return list<array{amount: int, description: string, quantity: int}>
+     */
+    public function itemsForGateway(): array
+    {
+        if (! empty($this->items)) {
+            return $this->items;
+        }
+
+        return [[
+            'amount' => (int) round($this->amount * 100),
+            'description' => 'Pedido '.$this->refExternal,
+            'quantity' => 1,
+        ]];
     }
 }

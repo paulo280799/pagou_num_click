@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\GatewayEnum;
 use App\Enums\PaymentMethodEnum;
 use App\Models\Scopes\UserScope;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
@@ -25,6 +26,10 @@ class Config extends Model
         'card_fee_percent_1x',
         'card_fee_percent_2_6x',
         'card_fee_percent_7_12x',
+        'mp_pix_fee_percent',
+        'mp_card_fee_percent_1x',
+        'mp_card_fee_percent_2_6x',
+        'mp_card_fee_percent_7_12x',
         'account_id',
     ];
 
@@ -36,27 +41,33 @@ class Config extends Model
         'card_fee_percent_1x' => 'float',
         'card_fee_percent_2_6x' => 'float',
         'card_fee_percent_7_12x' => 'float',
+        'mp_pix_fee_percent' => 'float',
+        'mp_card_fee_percent_1x' => 'float',
+        'mp_card_fee_percent_2_6x' => 'float',
+        'mp_card_fee_percent_7_12x' => 'float',
     ];
 
     /** Teto de parcelas aceito pelo checkout (e opção máxima no painel). */
     public const MAX_INSTALLMENTS = 12;
 
     /**
-     * Tarifa (%) do meio de pagamento; null = ainda não configurada (só cartão).
-     * Cartão por faixa de parcelas: 1x, 2–6x, 7–12x.
+     * Tarifa (%) do meio de pagamento no gateway que processou; null = ainda não configurada
+     * (cartão no Pagar.me; qualquer meio no Mercado Pago). Cartão por faixa de parcelas: 1x, 2–6x, 7–12x.
      */
-    public function feePercentFor(PaymentMethodEnum $method, ?int $installments = null): ?float
+    public function feePercentFor(PaymentMethodEnum $method, ?int $installments = null, GatewayEnum $gateway = GatewayEnum::PAGARME): ?float
     {
+        $mp = $gateway === GatewayEnum::MERCADOPAGO;
+
         if ($method === PaymentMethodEnum::PIX) {
-            return (float) $this->pix_fee_percent;
+            return $mp ? $this->mp_pix_fee_percent : (float) $this->pix_fee_percent;
         }
 
         $n = max(1, (int) $installments);
 
         return match (true) {
-            $n === 1 => $this->card_fee_percent_1x,
-            $n <= 6 => $this->card_fee_percent_2_6x,
-            default => $this->card_fee_percent_7_12x,
+            $n === 1 => $mp ? $this->mp_card_fee_percent_1x : $this->card_fee_percent_1x,
+            $n <= 6 => $mp ? $this->mp_card_fee_percent_2_6x : $this->card_fee_percent_2_6x,
+            default => $mp ? $this->mp_card_fee_percent_7_12x : $this->card_fee_percent_7_12x,
         };
     }
 

@@ -2,21 +2,25 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\ApiService;
-use App\Models\Payment;
-use App\Models\Config;
-use App\Enums\StatusPaymentEnum;
+use App\Enums\GatewayEnum;
 use App\Enums\PaymentMethodEnum;
+use App\Enums\StatusPaymentEnum;
 use App\Http\Requests\CheckoutRequest;
+use App\Models\Config;
+use App\Models\Payment;
+use App\Services\Gateways\GatewayManager;
+use App\Support\Gateways\GatewayRequestException;
+use App\Support\Gateways\GatewayUnavailableException;
+use App\Support\Gateways\PixRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class CheckoutController extends Controller
 {
-    function __construct(private Config $config, private Payment $payment, private ApiService $apiService){}
+    public function __construct(private Config $config, private Payment $payment, private GatewayManager $gateways) {}
 
-    public function store(CheckoutRequest $request) : JsonResponse
+    public function store(CheckoutRequest $request): JsonResponse
     {
         $validated = $request->validated();
 
@@ -24,9 +28,9 @@ class CheckoutController extends Controller
         $methods = array_values(array_intersect(CheckoutRequest::METHODS, $methods));
         $cardRequested = in_array('credit_card', $methods, true);
 
-        // Cartão pedido explicitamente mas sem chave pública: falha cedo em vez de gerar checkout sem cartão.
+        // Cartão pedido explicitamente mas sem chave pública em nenhum gateway: falha cedo em vez de gerar checkout sem cartão.
         // Se `payment_methods` foi omitido, o padrão (PIX + cartão) degrada para PIX no checkout.
-        if ($cardRequested && isset($validated['payment_methods']) && blank(config('integration.public_key'))) {
+        if ($cardRequested && isset($validated['payment_methods']) && ! $this->gateways->cardEnabled()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Pagamento com cartão indisponível nesta conta.',
@@ -36,9 +40,7 @@ class CheckoutController extends Controller
 
         $this->config = $this->config->first();
 
-        $expirationDate = Carbon::now()->addSeconds($this->config->duration)->format('Y-m-d H:i:s');
-
-        $expiresAt = Carbon::now()->addHours(3)->addSeconds($this->config->duration)->format('Y-m-d H:i:s');
+        $expiresAt = Carbon::now()->addSeconds($this->config->duration);
 
         $items = array_map(fn ($item) => [
             'amount' => $this->reaisParaCentavos($item['amount']),
@@ -49,28 +51,33 @@ class CheckoutController extends Controller
         $totalCents = array_sum(array_map(fn ($item) => $item['amount'] * $item['quantity'], $items));
 
         $customer = [
-            "name" => $validated['customer']['name'],
-            "email" => $validated['customer']['email'],
-            "type" => $validated['customer']['type'],
-            "document" => $this->removerMascaraCpf($validated['customer']['document']),
-            "phones" => [
-                "home_phone" => [
-                    "country_code" => $validated['customer']['phones']['home_phone']['country_code'],
-                    "number" => $validated['customer']['phones']['home_phone']['number'],
-                    "area_code" => $validated['customer']['phones']['home_phone']['area_code']
-                ]
-            ]
+            'name' => $validated['customer']['name'],
+            'email' => $validated['customer']['email'],
+            'type' => $validated['customer']['type'],
+            'document' => $this->removerMascaraCpf($validated['customer']['document']),
+            'phones' => [
+                'home_phone' => [
+                    'country_code' => $validated['customer']['phones']['home_phone']['country_code'],
+                    'number' => $validated['customer']['phones']['home_phone']['number'],
+                    'area_code' => $validated['customer']['phones']['home_phone']['area_code'],
+                ],
+            ],
         ];
 
+        // UUID antes da chamada: vira `code`/`external_reference` no gateway e permite reconciliar após timeout
+        $paymentId = (string) Str::uuid();
+
         $attributes = [
+            'id' => $paymentId,
             'refExternal' => $validated['refExternal'],
             'customer' => $customer,
+            'items' => $items,
             'payment_methods' => $methods,
             'max_installments' => $this->config->effectiveMaxInstallments(),
             'duration' => $this->config->duration,
-            'expirationDate' => $expirationDate,
+            'expirationDate' => $expiresAt->format('Y-m-d H:i:s'),
             'redirect_url' => $this->config->redirect_url,
-            'notification_url' => $this->config->notification_url
+            'notification_url' => $this->config->notification_url,
         ];
 
         // Checkout só-cartão: nenhum pedido PIX no provedor (o pedido de cartão nasce no pay-card).
@@ -84,75 +91,61 @@ class CheckoutController extends Controller
             return $this->paymentLinkResponse($payment);
         }
 
-        $body = [
-            "items" => $items,
-            "customer" => $customer,
-            "payments" => [
-                [
-                    "payment_method" => "pix",
-                    "pix" => [
-                        "expires_at" => (string)$expiresAt
-                    ],
-                    "amount" => $totalCents,
-                ]
-            ]
-        ];
-
-        $response = $this->apiService->create_order($body);
-
-        if ($response->failed()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erro ao processar pagamento',
-                'errors' => $response->json(),
-            ], $response->status());
+        try {
+            $charge = $this->gateways->createPix(new PixRequest(
+                paymentId: $paymentId,
+                amountCents: $totalCents,
+                items: $items,
+                customer: $customer,
+                expiresAt: $expiresAt,
+                refExternal: $validated['refExternal'],
+            ));
+        } catch (GatewayRequestException $e) {
+            return $this->gatewayErrorResponse($e->httpStatus, $e->body, $e->gateway);
+        } catch (GatewayUnavailableException $e) {
+            return $this->gatewayErrorResponse($e->httpStatus ?? 503, $e->body, $e->gateway);
         }
 
-        $responseData = $response->json();
-
-        if (data_get($responseData, 'charges.0.status') === 'failed'
-            || empty(data_get($responseData, 'charges.0.last_transaction.qr_code_url'))
-            || empty(data_get($responseData, 'charges.0.last_transaction.qr_code'))) {
-            Log::error('Pedido PIX sem QR code ou com charge failed no provedor; order='.data_get($responseData, 'id').' charge_status='.data_get($responseData, 'charges.0.status'));
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Erro ao processar pagamento',
-                'errors' => data_get($responseData, 'charges.0.last_transaction.gateway_response.errors', []),
-            ], 422);
-        }
-
-        $paymentMethodFromApi = $response['charges'][0]['payment_method'] ?? null;
-        $paymentEnum = PaymentMethodEnum::tryFrom(strtoupper((string) $paymentMethodFromApi));
-
-        $paymentStatusFromApi = $response['status'] ?? null;
-        $paymentStatusEnum = StatusPaymentEnum::tryFrom(strtoupper((string) $paymentStatusFromApi));
-
-        if (!$paymentEnum || !$paymentStatusEnum) {
-            Log::warning("Pedido {$responseData['id']} criado no provedor com payment_method/status não mapeado ({$paymentMethodFromApi}/{$paymentStatusFromApi}); usando fallback PIX/PENDING.");
-        }
+        // o gateway pode impor outra validade (MP: mínimo de 30 min): o timer e o polling seguem o provedor
+        $attributes['expirationDate'] = ($charge->expiresAt ?? $expiresAt)->format('Y-m-d H:i:s');
 
         $payment = $this->payment->create($attributes + [
-            'ide' => $responseData['id'],
-            'qrCode' => $responseData['charges'][0]['last_transaction']['qr_code_url'],
-            'copyPaste' => $responseData['charges'][0]['last_transaction']['qr_code'],
-            'amount' =>  $this->centavosParaReais($responseData['amount']),
+            'ide' => $charge->externalId,
+            'pix_gateway' => $charge->gateway->value,
+            'qrCode' => $charge->qrCodeImage,
+            'copyPaste' => $charge->copyPaste,
+            'amount' => $this->centavosParaReais($charge->amountCents),
+            'provider_status' => $charge->rawStatus,
+            'provider_status_detail' => $charge->rawDetail,
 
-            'payment_method' => ($paymentEnum ?? PaymentMethodEnum::PIX)->value,
-            'status' => ($paymentStatusEnum ?? StatusPaymentEnum::PENDING)->value,
+            'payment_method' => $charge->paymentMethod->value,
+            'status' => $charge->status->value,
         ]);
 
         return $this->paymentLinkResponse($payment);
     }
 
-    private function paymentLinkResponse(Payment $payment): JsonResponse
+    private function gatewayErrorResponse(int $status, mixed $errors, ?GatewayEnum $gateway): JsonResponse
     {
-        return response()->json([
-            'payment_link' => config('app.url').'/checkout/'.$payment->id
-        ], 201);
+        return response()->json(array_filter([
+            'success' => false,
+            'message' => 'Erro ao processar pagamento',
+            'errors' => $errors ?? [],
+            'gateway' => $gateway ? strtolower($gateway->value) : null,
+        ], fn ($v) => $v !== null), $status);
     }
 
-    private function reaisParaCentavos($valor) {
+    private function paymentLinkResponse(Payment $payment): JsonResponse
+    {
+        return response()->json(array_filter([
+            'payment_link' => config('app.url').'/checkout/'.$payment->id,
+            // gateway que criou o PIX; checkout só-cartão não chama o provedor na criação
+            'gateway' => $payment->pix_gateway ? strtolower($payment->pix_gateway->value) : null,
+        ]), 201);
+    }
+
+    private function reaisParaCentavos($valor)
+    {
         // Remove possíveis caracteres de moeda e espaço
         $valorLimpo = preg_replace('/[^\d,.-]/', '', $valor);
 
@@ -165,11 +158,12 @@ class CheckoutController extends Controller
         return intval($centavos);
     }
 
-    function centavosParaReais($centavos) {
+    public function centavosParaReais($centavos)
+    {
         return $centavos / 100;
     }
-    
-    function removerMascaraCpf(string $cpfComMascara): string
+
+    public function removerMascaraCpf(string $cpfComMascara): string
     {
         // Remove pontos, traços e outros caracteres não numéricos
         return preg_replace('/[^0-9]/', '', $cpfComMascara);

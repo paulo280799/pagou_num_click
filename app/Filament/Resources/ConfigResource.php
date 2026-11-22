@@ -169,6 +169,26 @@ class ConfigResource extends Resource
                             ->content('Deixe em branco as taxas de cartão ainda não definidas: a tarifa aparece como "Não configurada".')
                             ->columnSpanFull(),
                     ]),
+                Forms\Components\Section::make('Tarifas — Mercado Pago (redundância)')
+                    ->description('Usadas só nas vendas processadas pelo Mercado Pago, quando o Pagar.me está indisponível. Em branco: a tarifa aparece como "Não configurada".')
+                    ->icon('heroicon-o-arrow-path-rounded-square')
+                    ->visible(fn (): bool => app(\App\Services\Gateways\MercadoPagoGateway::class)->isEnabled())
+                    ->collapsed()
+                    ->columns(4)
+                    ->schema([
+                        Forms\Components\TextInput::make('mp_pix_fee_percent')
+                            ->label('Pix')
+                            ->numeric()->minValue(0)->maxValue(100)->step(0.01)->suffix('%'),
+                        Forms\Components\TextInput::make('mp_card_fee_percent_1x')
+                            ->label('Cartão 1x')
+                            ->numeric()->minValue(0)->maxValue(100)->step(0.01)->suffix('%'),
+                        Forms\Components\TextInput::make('mp_card_fee_percent_2_6x')
+                            ->label('Cartão 2x a 6x')
+                            ->numeric()->minValue(0)->maxValue(100)->step(0.01)->suffix('%'),
+                        Forms\Components\TextInput::make('mp_card_fee_percent_7_12x')
+                            ->label('Cartão 7x a 12x')
+                            ->numeric()->minValue(0)->maxValue(100)->step(0.01)->suffix('%'),
+                    ]),
             ]);
     }
 

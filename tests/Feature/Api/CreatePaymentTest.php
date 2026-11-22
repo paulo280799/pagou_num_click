@@ -114,7 +114,10 @@ class CreatePaymentTest extends TestCase
 
         $this->postJson('/api/create-payment', $this->validPayload(), [
             'Authorization' => 'Bearer valid-token',
-        ])->assertStatus(201)->assertExactJson(['payment_link' => config('app.url').'/checkout/'.Payment::withoutGlobalScopes()->first()->id]);
+        ])->assertStatus(201)->assertExactJson([
+            'payment_link' => config('app.url').'/checkout/'.Payment::withoutGlobalScopes()->first()->id,
+            'gateway' => 'pagarme',
+        ]);
 
         $payment = Payment::withoutGlobalScopes()->first();
         $this->assertSame('12345678900', $payment->customer['document']);

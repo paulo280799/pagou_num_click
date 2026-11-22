@@ -114,7 +114,7 @@ Status do **pedido** (`order.status`): `pending`, `paid`, `failed`, `canceled`.
 
 | Etapa | Onde | Detalhe |
 | :-- | :-- | :-- |
-| Criar pedido | `CheckoutController::store` → `ApiService::create_order` | Envia `payment_method: pix` com `pix.expires_at` (UTC; código soma +3h ao horário local) e `amount` em centavos. |
+| Criar pedido | `CheckoutController::store` → `GatewayManager::createPix` → `PagarmeGateway::createPix` | Envia `payment_method: pix` com `pix.expires_at` (UTC; código soma +3h ao horário local) e `amount` em centavos. |
 | Guardar resultado | `Payment` | `ide` = `id` do pedido; `qrCode` = `qr_code_url`; `copyPaste` = `qr_code`. |
 | Acompanhar | `ProcessPaymentController` (`app:process-payment`, a cada 10 s) | `GET /v5/orders/{ide}` para cada `Payment` PENDING; mapeia `status` para `StatusPaymentEnum`. |
 | Notificar cliente | `WebhookController` (`app:process-webhook`) | POST em `notification_url` quando status ≠ PENDING. |

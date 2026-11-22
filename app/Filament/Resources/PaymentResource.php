@@ -12,6 +12,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use App\Enums\GatewayEnum;
 use App\Enums\PaymentMethodEnum;
 use App\Enums\StatusPaymentEnum;
 
@@ -56,6 +57,10 @@ class PaymentResource extends Resource
                     ->label('Meio')
                     ->state(fn (Payment $record): string => static::paymentMethodShort($record))
                     ->icon(fn (Payment $record): string => static::paymentMethodIcon($record)),
+                Tables\Columns\TextColumn::make('gateway')
+                    ->label('Gateway')
+                    ->badge()
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('amount')
                     ->label('Valor')
                     ->money('BRL', locale: 'pt_BR')
@@ -78,6 +83,12 @@ class PaymentResource extends Resource
                         PaymentMethodEnum::PIX->value => 'Pix',
                         PaymentMethodEnum::CREDIT_CARD->value => 'Cartão de crédito',
                     ]),
+                Tables\Filters\SelectFilter::make('gateway')
+                    ->label('Gateway')
+                    ->options(collect(GatewayEnum::cases())->mapWithKeys(fn (GatewayEnum $g) => [$g->value => $g->getLabel()])->all())
+                    ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
+                        ? $query->settledOn(GatewayEnum::from($data['value']))
+                        : $query),
                 Tables\Filters\Filter::make('created_at')
                     ->label('Período')
                     ->form([
@@ -245,6 +256,10 @@ class PaymentResource extends Resource
                     ->collapsed()
                     ->columns(2)
                     ->schema([
+                        TextEntry::make('pix_gateway')->label('Gateway do Pix')->badge()->visible(fn (Payment $r): bool => $r->pix_gateway !== null),
+                        TextEntry::make('card_gateway')->label('Gateway do cartão')->badge()->visible(fn (Payment $r): bool => $r->card_gateway !== null),
+                        TextEntry::make('provider_status')->label('Status no provedor')->visible(fn (Payment $r): bool => filled($r->provider_status)),
+                        TextEntry::make('provider_status_detail')->label('Detalhe do status')->visible(fn (Payment $r): bool => filled($r->provider_status_detail)),
                         TextEntry::make('ide')->label('ID do pedido Pix (provedor)')->copyable()->visible(fn (Payment $r): bool => filled($r->ide)),
                         TextEntry::make('card_order_id')->label('ID do pedido do cartão (provedor)')->copyable()->visible(fn (Payment $r): bool => filled($r->card_order_id)),
                         TextEntry::make('acquirer_tid')->label('TID')->copyable()->visible(fn (Payment $r): bool => filled($r->acquirer_tid)),

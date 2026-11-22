@@ -39,7 +39,7 @@
 
             {{-- parcelamento desligado na Config (limite 1): sem seletor, cobra à vista --}}
             @if ($cardConfig['maxInstallments'] > 1)
-                <label class="flex flex-col gap-1 text-[13px] font-semibold text-[#141413]">Parcelas
+                <label x-show="gateway === 'pagarme'" class="flex flex-col gap-1 text-[13px] font-semibold text-[#141413]">Parcelas
                     <select x-model="installments" class="w-full rounded-xl border border-[#E8E6DF] px-3.5 py-3 text-[15px] font-normal bg-white">
                         <template x-for="o in installmentOptions()" :key="o.n">
                             <option :value="o.n" x-text="o.label"></option>
@@ -48,6 +48,15 @@
                 </label>
             @endif
 
+            {{-- só no Mercado Pago (gateway de redundância): exige o documento do titular e não pede endereço --}}
+            <label x-show="gateway === 'mercadopago'" x-cloak class="flex flex-col gap-1 text-[13px] font-semibold text-[#141413]">CPF do titular
+                <input type="text" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" maxlength="14"
+                    x-model="cpf" @input="cpf = $el.value = maskCpf($el.value)"
+                    class="w-full rounded-xl border border-[#E8E6DF] px-3.5 py-3 text-[15px] font-normal">
+                <span x-show="errors.cpf" x-text="errors.cpf" class="text-xs font-normal text-[#C1440E]"></span>
+            </label>
+
+            <div x-show="gateway === 'pagarme'" class="flex flex-col gap-3.5">
             <div class="text-[13px] font-semibold text-[#141413] pt-1">Endereço de cobrança</div>
 
             <label class="flex flex-col gap-1 text-[13px] font-semibold text-[#141413]">CEP
@@ -85,6 +94,7 @@
                     </select>
                     <span x-show="errors.state" x-text="errors.state" class="text-xs font-normal text-[#C1440E]"></span>
                 </label>
+            </div>
             </div>
         </fieldset>
 

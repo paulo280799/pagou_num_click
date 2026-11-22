@@ -13,16 +13,17 @@ class ProcessPaymentTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_expired_pending_payment_is_canceled_without_calling_provider(): void
+    public function test_expired_pending_payment_is_canceled_when_provider_confirms_it_is_still_pending(): void
     {
         $account = Account::factory()->create();
-        $payment = Payment::factory()->expired()->create(['account_id' => $account->id]);
+        $payment = Payment::factory()->expired()->create(['account_id' => $account->id, 'ide' => 'order_1']);
 
-        Http::fake();
+        // antes de cancelar por expiração o gateway é consultado (R7)
+        Http::fake(['*/v5/orders/order_1' => Http::response(['status' => 'pending'], 200)]);
 
         $this->artisan('app:process-payment');
 
-        Http::assertNothingSent();
+        Http::assertSentCount(1);
         $this->assertSame(StatusPaymentEnum::CANCELED, $payment->refresh()->status);
     }
 

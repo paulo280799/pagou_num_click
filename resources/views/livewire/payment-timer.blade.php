@@ -6,9 +6,11 @@
         urgent: {{ $urgent ? 'true' : 'false' }},
         tick() {
             const diff = Math.max(0, Math.floor((this.expiresAt - Date.now()) / 1000));
-            const minutes = String(Math.floor(diff / 60)).padStart(2, '0');
+            const hours = Math.floor(diff / 3600);
+            const minutes = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
             const seconds = String(diff % 60).padStart(2, '0');
-            this.display = `${minutes}:${seconds}`;
+            // com 1 h ou mais mostra horas (1:58:33); abaixo disso fica MM:SS
+            this.display = hours > 0 ? `${hours}:${minutes}:${seconds}` : `${minutes}:${seconds}`;
             this.urgent = diff <= 60;
 
             if (diff <= 0) {

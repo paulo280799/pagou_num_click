@@ -39,6 +39,30 @@ export const formatZip = (v) => {
 
 const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 
+// SDK do Mercado Pago carregado sob demanda: só quem cai no fallback paga o custo do script
+const mpInstances = {}
+async function mercadoPago(publicKey) {
+    if (!window.MercadoPago) {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script')
+            script.src = 'https://sdk.mercadopago.com/js/v2'
+            script.onload = resolve
+            script.onerror = () => reject(new Error('tokenize'))
+            document.head.appendChild(script)
+        })
+    }
+    mpInstances[publicKey] ??= new window.MercadoPago(publicKey, { locale: 'pt-BR' })
+    return mpInstances[publicKey]
+}
+
+// Device ID: o SDK v2 grava window.MP_DEVICE_SESSION_ID de forma assíncrona após carregar (antifraude do MP)
+async function mpDeviceId() {
+    for (let i = 0; i < 10 && !window.MP_DEVICE_SESSION_ID; i++) {
+        await new Promise((r) => setTimeout(r, 100))
+    }
+    return window.MP_DEVICE_SESSION_ID ?? null
+}
+
 const brl = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 document.addEventListener('alpine:init', () => {
@@ -49,6 +73,9 @@ document.addEventListener('alpine:init', () => {
         expiry: '',
         cvv: '',
         installments: 1,
+        cpf: '',
+        // gateway vigente no render; o do submit vem de cfg.configUrl (o formulário vive em wire:ignore e este valor congela)
+        gateway: cfg.gateway ?? 'pagarme',
         zip: '',
         street: '',
         addrNumber: '',
@@ -64,6 +91,10 @@ document.addEventListener('alpine:init', () => {
         maskPan: formatPan,
         maskExpiry: formatExpiry,
         maskZip: formatZip,
+        maskCpf(v) {
+            const d = onlyDigits(v).slice(0, 11)
+            return d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+        },
 
         get amountLabel() {
             return brl(cfg.amountCents)
@@ -108,90 +139,186 @@ document.addEventListener('alpine:init', () => {
             })
         },
 
-        validate() {
+        validate(gateway) {
             const e = {}
             if (!luhn(this.number)) e.number = 'Número de cartão inválido'
             if (this.holder.trim().length < 2) e.holder = 'Informe o nome impresso no cartão'
             const [mm, yy] = this.expiry.split('/')
             if (!mm || !yy || yy.length !== 2 || isExpired(mm, yy)) e.expiry = 'Validade inválida'
             if (!/^\d{3,4}$/.test(this.cvv)) e.cvv = 'CVV inválido'
-            if (onlyDigits(this.zip).length !== 8) e.zip = 'CEP inválido'
-            if (this.street.trim().length < 3) e.street = 'Informe a rua'
-            if (this.addrNumber.trim() === '') e.addrNumber = 'Informe o número'
-            if (this.city.trim().length < 2) e.city = 'Informe a cidade'
-            if (!UFS.includes(this.state)) e.state = 'Selecione o estado'
+            if (gateway === 'mercadopago') {
+                // o MP não pede endereço de cobrança, mas exige o documento do titular para tokenizar
+                if (onlyDigits(this.cpf).length !== 11) e.cpf = 'CPF inválido'
+            } else {
+                if (onlyDigits(this.zip).length !== 8) e.zip = 'CEP inválido'
+                if (this.street.trim().length < 3) e.street = 'Informe a rua'
+                if (this.addrNumber.trim() === '') e.addrNumber = 'Informe o número'
+                if (this.city.trim().length < 2) e.city = 'Informe a cidade'
+                if (!UFS.includes(this.state)) e.state = 'Selecione o estado'
+            }
             this.errors = e
             return Object.keys(e).length === 0
         },
 
-        async tokenize() {
+        // Gateway vigente no momento do clique. Se a consulta falhar, segue com a config do render.
+        async liveConfig() {
+            try {
+                const res = await fetch(cfg.configUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+                if (res.status === 409) throw new Error('blocked')
+                if (!res.ok) return cfg
+                return { ...cfg, ...(await res.json()) }
+            } catch (err) {
+                if (err.message === 'blocked') throw err
+                return cfg
+            }
+        },
+
+        // `held` guarda número e CVV só durante o submit (o fallback re-tokeniza com eles); nunca vai para o estado do Alpine.
+        async tokenize(live, held) {
             const [mm, yy] = this.expiry.split('/')
-            const res = await fetch(`${cfg.tokenUrl}?appId=${encodeURIComponent(cfg.publicKey)}`, {
+
+            if (live.gateway === 'mercadopago') {
+                const mp = await mercadoPago(live.publicKey)
+                const methods = await mp.getPaymentMethods({ bin: held.number.slice(0, 8) })
+                const method = methods?.results?.[0]
+                if (!method?.id) throw new Error('tokenize')
+                // issuer só quando o MP pede (additional_info_needed); enviar o "issuer" sugerido de qualquer jeito
+                // dá erro 10111 (BIN sem esse emissor configurado)
+                let issuerId = null
+                if (method.additional_info_needed?.includes('issuer_id')) {
+                    const issuers = await mp.getIssuers({ paymentMethodId: method.id, bin: held.number.slice(0, 8) })
+                    issuerId = issuers?.[0]?.id ?? null
+                }
+                const token = await mp.createCardToken({
+                    cardNumber: held.number,
+                    cardholderName: this.holder.trim(),
+                    cardExpirationMonth: String(Number(mm)),
+                    cardExpirationYear: String(2000 + Number(yy)),
+                    securityCode: held.cvv,
+                    identificationType: 'CPF',
+                    identificationNumber: onlyDigits(this.cpf),
+                })
+                if (!token?.id) throw new Error('tokenize')
+                return { token: token.id, paymentMethodId: method.id, issuerId }
+            }
+
+            const res = await fetch(`${live.tokenUrl}?appId=${encodeURIComponent(live.publicKey)}`, {
                 method: 'POST',
                 credentials: 'omit',
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
                 body: JSON.stringify({
                     type: 'card',
                     card: {
-                        number: onlyDigits(this.number),
+                        number: held.number,
                         holder_name: this.holder.trim(),
                         exp_month: Number(mm),
                         exp_year: Number(yy),
-                        cvv: this.cvv,
+                        cvv: held.cvv,
                     },
                 }),
             })
-            // dado sensível some da memória/DOM logo após a tokenização
-            this.number = ''
-            this.cvv = ''
             if (!res.ok) throw new Error('tokenize')
             const data = await res.json()
             if (!data?.id) throw new Error('tokenize')
-            return data.id
+            return { token: data.id }
+        },
+
+        async payBody(live, tokenized) {
+            if (live.gateway === 'mercadopago') {
+                return {
+                    device_id: await mpDeviceId(),
+                    gateway: 'mercadopago',
+                    card_token: tokenized.token,
+                    payment_method_id: tokenized.paymentMethodId,
+                    issuer_id: tokenized.issuerId,
+                    installments: 1,
+                }
+            }
+            return {
+                gateway: 'pagarme',
+                card_token: tokenized.token,
+                installments: Number(this.installments),
+                billing_address: {
+                    line_1: `${this.street.trim()}, ${this.addrNumber.trim()}`,
+                    zip_code: onlyDigits(this.zip),
+                    city: this.city.trim(),
+                    state: this.state,
+                    country: 'BR',
+                },
+            }
         },
 
         async submit() {
             if (this.busy || this.locked) return
             this.message = ''
             this.declined = false
-            if (!this.validate()) return
 
+            let held = null
             try {
                 this.status = 'tokenizing'
-                const token = await this.tokenize()
+                let live = await this.liveConfig()
+                this.gateway = live.gateway ?? 'pagarme'
+                if (!this.validate(this.gateway)) {
+                    this.status = 'idle'
+                    return
+                }
 
-                this.status = 'sending'
-                const res = await fetch(cfg.payUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Accept: 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
-                    },
-                    body: JSON.stringify({
-                        card_token: token,
-                        installments: Number(this.installments),
-                        billing_address: {
-                            line_1: `${this.street.trim()}, ${this.addrNumber.trim()}`,
-                            zip_code: onlyDigits(this.zip),
-                            city: this.city.trim(),
-                            state: this.state,
-                            country: 'BR',
+                held = { number: onlyDigits(this.number), cvv: this.cvv }
+                // dado sensível some do estado/DOM assim que sai do formulário
+                this.number = ''
+                this.cvv = ''
+
+                // 2 voltas: a segunda só existe se o backend pedir para tokenizar em outro gateway (fallback)
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    this.status = 'tokenizing'
+                    const tokenized = await this.tokenize(live, held)
+
+                    this.status = 'sending'
+                    const res = await fetch(cfg.payUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Accept: 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
                         },
-                    }),
-                })
-                await this.handle(res)
+                        body: JSON.stringify(await this.payBody(live, tokenized)),
+                    })
+                    const body = await res.json().catch(() => ({}))
+
+                    if (body.status === 'fallback' && attempt === 0) {
+                        live = { ...cfg, ...body }
+                        this.gateway = live.gateway
+                        if (!this.validate(this.gateway)) {
+                            // faltam dados do outro gateway (ex.: CPF no MP): o pagador completa e envia de novo
+                            this.status = 'idle'
+                            this.message = 'Para concluir, complete os dados abaixo e digite o cartão novamente.'
+                            return
+                        }
+                        continue
+                    }
+
+                    this.handle(res, body)
+                    return
+                }
             } catch (err) {
+                // o SDK do MP rejeita com objeto/array sem `.message`: só o tipo vai ao console (nunca dados do cartão)
+                console.error('card-form:', err?.message ?? JSON.stringify(err)?.slice(0, 300))
                 this.status = 'idle'
-                this.message = err.message === 'tokenize'
-                    ? 'Não foi possível validar o cartão. Confira os dados e tente novamente.'
-                    : 'Falha de conexão. Tente novamente.'
+                if (err.message === 'blocked') {
+                    this.status = 'blocked'
+                    this.message = 'Este pagamento não pode mais ser pago no cartão.'
+                    this.$wire.refreshStatus()
+                } else {
+                    this.message = err.message === 'tokenize'
+                        ? 'Não foi possível validar o cartão. Confira os dados e tente novamente.'
+                        : 'Falha de conexão. Tente novamente.'
+                }
+            } finally {
+                held = null
             }
         },
 
-        async handle(res) {
-            const body = await res.json().catch(() => ({}))
-
+        handle(res, body) {
             if (res.status === 200) {
                 this.status = 'blocked'
                 this.message = 'Pagamento aprovado!'
@@ -213,7 +340,7 @@ document.addEventListener('alpine:init', () => {
                 this.$wire.refreshStatus()
             } else if (res.status === 429) {
                 this.status = 'blocked'
-                this.message = 'Muitas tentativas. Aguarde alguns minutos ou pague com Pix.'
+                this.message = cfg.pixEnabled ? 'Muitas tentativas. Aguarde alguns minutos ou pague com Pix.' : 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
                 setTimeout(() => { if (this.status === 'blocked') this.status = 'idle' }, 60000)
             } else {
                 this.status = 'idle'

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -20,6 +21,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // APP_URL https => links e assets sempre https, mesmo quando o proxy (túnel local, load balancer) não é confiável
+        // no TrustProxies e o Laravel enxergaria a requisição como http (conteúdo misto quebra o Alpine/Livewire)
+        if (str_starts_with((string) config('app.url'), 'https://')) {
+            URL::forceScheme('https');
+        }
     }
 }
