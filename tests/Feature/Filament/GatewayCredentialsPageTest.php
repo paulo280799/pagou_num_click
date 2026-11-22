@@ -88,6 +88,46 @@ class GatewayCredentialsPageTest extends TestCase
         $this->assertNotNull($row->last_validation_error);
     }
 
+    public function test_a_wrong_new_key_never_replaces_the_one_that_works(): void
+    {
+        Http::fake(['*/v5/orders*' => Http::response(['message' => 'denied'], 401)]);
+        GatewayCredential::create(['gateway' => GatewayEnum::PAGARME, 'credentials' => ['user' => 'sk_test_BOA1111'], 'enabled' => true, 'last_validated_at' => now()]);
+
+        Livewire::test(GatewayCredentialsPage::class)->fillForm(['pagarme_user' => 'sk_test_COLADA_ERRADA'])->call('save');
+
+        $row = $this->row(GatewayEnum::PAGARME);
+        $this->assertSame('sk_test_BOA1111', $row->credentials['user']);
+        $this->assertTrue($row->enabled);
+        $this->assertNotNull($row->last_validated_at);
+    }
+
+    public function test_a_brand_new_invalid_gateway_is_saved_disabled(): void
+    {
+        Http::fake(['*mercadopago.test/users/me' => Http::response([], 401)]);
+
+        Livewire::test(GatewayCredentialsPage::class)->fillForm(['mp_access_token' => 'TEST-ruim'])->call('save');
+
+        $this->assertFalse($this->row(GatewayEnum::MERCADOPAGO)->enabled);
+        $this->assertFalse(app(\App\Services\Gateways\GatewayManager::class)->forTenant()->hasAnyGateway());
+    }
+
+    public function test_cannot_disable_while_an_overdue_pending_pix_or_a_watched_card_pix_depends_on_it(): void
+    {
+        Http::fake(['*' => Http::response([], 200)]);
+        GatewayCredential::create(['gateway' => GatewayEnum::PAGARME, 'credentials' => ['user' => 'sk_test_AAAA'], 'enabled' => true]);
+
+        // PENDING já vencido (o scheduler ainda não resolveu): continua dependendo do gateway
+        $overdue = Payment::factory()->pending()->create(['account_id' => $this->account->id, 'ide' => 'o1', 'pix_gateway' => GatewayEnum::PAGARME, 'expirationDate' => now()->subMinutes(2)]);
+        Livewire::test(GatewayCredentialsPage::class)->fillForm(['pagarme_enabled' => false])->call('save');
+        $this->assertTrue($this->row(GatewayEnum::PAGARME)->enabled);
+        $overdue->forceFill(['status' => 'CANCELED'])->save();
+
+        // PIX remanescente de cartão pago, ainda vigiado
+        Payment::factory()->paid()->create(['account_id' => $this->account->id, 'ide' => 'o2', 'pix_gateway' => GatewayEnum::PAGARME, 'payment_method' => 'CREDIT_CARD', 'expirationDate' => now()->addMinutes(3)]);
+        Livewire::test(GatewayCredentialsPage::class)->fillForm(['pagarme_enabled' => false])->call('save');
+        $this->assertTrue($this->row(GatewayEnum::PAGARME)->enabled);
+    }
+
     public function test_both_gateways_turn_redundancy_on(): void
     {
         Http::fake(['*' => Http::response([], 200)]);

@@ -32,7 +32,7 @@ class PlatformTest extends TestCase
 
         config(['gateways.env_credentials_account' => null]);
         $this->admin = User::factory()->create(['account_id' => Account::factory()->create(['name' => 'Plataforma'])->id]);
-        $this->admin->forceFill(['is_super_admin' => true, 'password_set_at' => now()])->save();
+        $this->admin->forceFill(['is_super_admin' => true])->save();
     }
 
     private function asAdmin(): void
@@ -77,7 +77,7 @@ class PlatformTest extends TestCase
         $account = Account::where('name', 'Loja Nova')->firstOrFail();
         $owner = User::where('email', 'maria@loja.test')->firstOrFail();
         $this->assertSame($account->id, $owner->account_id);
-        $this->assertNull($owner->password_set_at);
+        $this->assertTrue($owner->invitation_pending);
         $this->assertFalse($owner->is_super_admin);
         Notification::assertSentTo($owner, AccountInvitation::class);
         $this->assertSame(0, Config::withoutGlobalScopes()->where('account_id', $account->id)->count());
@@ -96,7 +96,7 @@ class PlatformTest extends TestCase
     public function test_invitation_lets_the_owner_set_the_password_once(): void
     {
         $owner = User::factory()->create(['account_id' => Account::factory()->create()->id]);
-        $owner->forceFill(['password_set_at' => null])->save();
+        $owner->forceFill(['invitation_pending' => true])->save();
         $url = AccountInvitation::urlFor($owner);
 
         $this->get($url)->assertOk()->assertSee('Defina sua senha');
@@ -105,7 +105,7 @@ class PlatformTest extends TestCase
 
         $this->assertAuthenticatedAs($owner);
         $owner->refresh();
-        $this->assertNotNull($owner->password_set_at);
+        $this->assertFalse($owner->invitation_pending);
         $this->assertTrue(Hash::check('senha-bem-forte', $owner->password));
 
         // uso único
@@ -117,14 +117,14 @@ class PlatformTest extends TestCase
     public function test_invitation_rejects_tampered_expired_and_weak_passwords(): void
     {
         $owner = User::factory()->create(['account_id' => Account::factory()->create()->id]);
-        $owner->forceFill(['password_set_at' => null])->save();
+        $owner->forceFill(['invitation_pending' => true])->save();
         $url = AccountInvitation::urlFor($owner);
 
         $this->get(route('invitation.show', $owner))->assertForbidden();                       // sem assinatura
         $this->get($url.'x')->assertForbidden();                                               // assinatura adulterada
         $this->post($url, ['password' => 'curta', 'password_confirmation' => 'curta'])->assertSessionHasErrors('password');
         $this->post($url, ['password' => 'senha-bem-forte', 'password_confirmation' => 'diferente'])->assertSessionHasErrors('password');
-        $this->assertNull($owner->fresh()->password_set_at);
+        $this->assertTrue($owner->fresh()->invitation_pending);
 
         $this->travel(AccountInvitation::VALID_DAYS + 1)->days();
         $this->get($url)->assertForbidden();                                                   // expirado
@@ -133,15 +133,28 @@ class PlatformTest extends TestCase
     public function test_listing_shows_status_and_numbers_of_every_account_without_tenant_scope(): void
     {
         $pending = Account::factory()->create(['name' => 'Conta Pendente']);
-        $owner = User::factory()->create(['account_id' => $pending->id]);
-        $owner->forceFill(['password_set_at' => null])->save();
+        User::factory()->create(['account_id' => $pending->id])->forceFill(['invitation_pending' => true])->save();
         $active = Account::factory()->create(['name' => 'Conta Ativa']);
-        User::factory()->create(['account_id' => $active->id])->forceFill(['password_set_at' => now()])->save();
+        User::factory()->create(['account_id' => $active->id]);
         Payment::factory()->paid()->create(['account_id' => $active->id, 'amount' => 150]);
         $this->asAdmin();
 
         $this->get('/platform/accounts')
             ->assertOk()->assertSee('Conta Pendente')->assertSee('Convite pendente')->assertSee('Conta Ativa')->assertSee('R$')->assertSee('150');
+    }
+
+    public function test_teammates_with_a_real_password_never_count_as_pending_invites(): void
+    {
+        $account = Account::factory()->create(['name' => 'Conta Com Time']);
+        User::factory()->create(['account_id' => $account->id]); // dono que já aceitou
+        User::factory()->create(['account_id' => $account->id]); // colega criado no painel, com senha
+        $this->asAdmin();
+
+        $this->get('/platform/accounts')->assertOk()->assertSee('Conta Com Time')->assertDontSee('Convite pendente');
+
+        Notification::fake();
+        Livewire::test(ListPlatformAccounts::class)->assertTableActionHidden('resendInvite', $account->id);
+        Notification::assertNothingSent();
     }
 
     public function test_suspended_account_gets_403_on_the_api_and_reactivation_restores_it(): void
@@ -198,6 +211,5 @@ class PlatformTest extends TestCase
         $new = User::where('email', 'novo@plataforma.test')->firstOrFail();
         $this->assertTrue($new->is_super_admin);
         $this->assertTrue(Hash::check('senha-forte-123', $new->password));
-        $this->assertNotNull($new->password_set_at);
     }
 }

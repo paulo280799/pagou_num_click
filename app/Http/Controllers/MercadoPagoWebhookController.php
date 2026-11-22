@@ -20,12 +20,13 @@ class MercadoPagoWebhookController extends Controller
     /**
      * Cada conta registra no painel do próprio Mercado Pago a URL `/api/webhooks/mercadopago/{account}` e cadastra o
      * segredo no sistema: a assinatura é validada com o segredo DA CONTA da URL e só os pagamentos dela são reavaliados.
-     * Sem `{account}` (URL antiga) vale a conta que ainda usa o .env (`gateways.env_credentials_account`).
+     * Sem `{account}` (URL antiga) vale a conta que ainda usa o .env (`gateways.env_credentials_account`) ou, sem ela, a conta dona do pedido.
      */
     public function __invoke(Request $request, ?string $account = null): JsonResponse
     {
         $orderId = (string) ($request->input('data.id') ?? $request->query('data_id') ?? '');
-        $account ??= $this->legacyAccount();
+        // URL antiga (sem conta): a conta do .env; sem ela, a dona do pedido (o segredo continua sendo o dessa conta)
+        $account ??= $this->legacyAccount() ?? $this->accountOfOrder($orderId);
 
         if (! $this->validSignature($request, $orderId, $this->secretFor($account))) {
             Log::warning('Webhook Mercado Pago: assinatura inválida ou segredo não configurado');
@@ -53,6 +54,17 @@ class MercadoPagoWebhookController extends Controller
     private function legacyAccount(): ?string
     {
         return filled(config('gateways.env_credentials_account')) ? (string) config('gateways.env_credentials_account') : null;
+    }
+
+    private function accountOfOrder(string $orderId): ?string
+    {
+        if ($orderId === '') {
+            return null;
+        }
+
+        return Payment::withoutGlobalScopes()
+            ->where(fn ($q) => $q->whereRaw('LOWER(ide) = ?', [strtolower($orderId)])->orWhereRaw('LOWER(card_order_id) = ?', [strtolower($orderId)]))
+            ->value('account_id');
     }
 
     private function secretFor(?string $account): ?string

@@ -38,7 +38,7 @@ class PlatformAccountResource extends Resource
         return Account::query()->addSelect([
             'accounts.*',
             'owner_email' => User::select('email')->whereColumn('account_id', 'accounts.id')->orderBy('id')->limit(1),
-            'owner_pending' => User::selectRaw('count(*)')->whereColumn('account_id', 'accounts.id')->whereNull('password_set_at'),
+            'owner_pending' => User::selectRaw('count(*)')->whereColumn('account_id', 'accounts.id')->where('invitation_pending', true),
             'last_api_use' => DB::table('configs')->select('api_token_last_used_at')->whereColumn('account_id', 'accounts.id')->limit(1),
             'payments_total' => DB::table('payments')->selectRaw('count(*)')->whereColumn('account_id', 'accounts.id'),
             'paid_volume' => DB::table('payments')->selectRaw('coalesce(sum(amount), 0)')->whereColumn('account_id', 'accounts.id')
@@ -102,7 +102,7 @@ class PlatformAccountResource extends Resource
     /** Envia o convite ao primeiro usuário da conta; se o e-mail falhar, mostra o link para o super-admin repassar. */
     public static function sendInvite(Account $account): void
     {
-        $owner = User::where('account_id', $account->id)->whereNull('password_set_at')->orderBy('id')->first();
+        $owner = User::where('account_id', $account->id)->where('invitation_pending', true)->orderBy('id')->first();
 
         if (! $owner) {
             Notification::make()->title('Esta conta não tem convite pendente.')->warning()->send();

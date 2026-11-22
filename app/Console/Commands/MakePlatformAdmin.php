@@ -24,7 +24,7 @@ class MakePlatformAdmin extends Command
             $account = Account::firstOrCreate(['name' => 'Plataforma']);
             $password = $this->option('password') ?: Str::password(16);
             $user = User::create(['name' => $this->option('name'), 'email' => $email, 'password' => $password, 'account_id' => $account->id]);
-            $user->forceFill(['password_set_at' => now(), 'email_verified_at' => now()]);
+            $user->forceFill(['email_verified_at' => now()]);
         }
 
         $user->forceFill(['is_super_admin' => true])->save();

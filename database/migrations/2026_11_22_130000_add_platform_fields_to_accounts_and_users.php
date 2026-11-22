@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -15,18 +14,15 @@ return new class extends Migration
 
         Schema::table('users', function (Blueprint $table) {
             $table->boolean('is_super_admin')->default(false);
-            // preenchido quando o usuário define a própria senha; null = convite pendente
-            $table->timestamp('password_set_at')->nullable();
+            // true só para o responsável convidado que ainda não definiu a senha (nenhum outro usuário fica "pendente")
+            $table->boolean('invitation_pending')->default(false);
         });
-
-        // usuários que já existem já têm senha
-        DB::table('users')->update(['password_set_at' => DB::raw('created_at')]);
     }
 
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['is_super_admin', 'password_set_at']);
+            $table->dropColumn(['is_super_admin', 'invitation_pending']);
         });
 
         Schema::table('accounts', function (Blueprint $table) {

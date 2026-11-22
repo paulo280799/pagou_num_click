@@ -43,7 +43,7 @@ class User extends Authenticatable implements FilamentUser
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password_set_at' => 'datetime',
+        'invitation_pending' => 'boolean',
         'is_super_admin' => 'boolean',
         'password' => 'hashed',
     ];

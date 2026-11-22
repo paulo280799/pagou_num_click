@@ -9,7 +9,9 @@ use App\Services\Gateways\GatewayManager;
 use App\Support\TenantContext;
 use App\Support\ChargeOutcome;
 use App\Support\ChargeResult;
+use App\Support\Gateways\GatewayCredentialsRejectedException;
 use App\Support\Gateways\GatewayUnavailableException;
+use Illuminate\Support\Facades\Cache;
 use App\Support\Gateways\NormalizedStatus;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -94,7 +96,21 @@ class ProcessPaymentController extends Controller
     {
         if ($payment->ide) {
             try {
-                $this->applyPixStatus($payment, $this->gateways->forPayment($payment)->pixStatus($payment));
+                $status = $this->gateways->forPayment($payment)->pixStatus($payment);
+                $this->applyPixStatus($payment, $status);
+
+                // status que não deu para interpretar (ex.: 404 de outra conta do provedor): não é "não pago"
+                if ($status->rawStatus === null) {
+                    $this->warnOncePerHour($payment, 'status do PIX indecifrável no provedor; não cancelo');
+
+                    return;
+                }
+            } catch (GatewayCredentialsRejectedException $e) {
+                // credencial da conta recusada: nunca cancelar sem enxergar (o cliente pode ter pago). Fica PENDING
+                // até a conta corrigir a credencial em /admin/gateways; o provedor então diz o que aconteceu.
+                $this->warnOncePerHour($payment, "credencial recusada ({$e->getMessage()}); não cancelo");
+
+                return;
             } catch (GatewayUnavailableException $e) {
                 $graceEnd = Carbon::parse($payment->expirationDate)->addMinutes((int) config('gateways.expiry_grace_minutes'));
 
@@ -112,6 +128,14 @@ class ProcessPaymentController extends Controller
         }
 
         $payment->update(['status' => StatusPaymentEnum::CANCELED]);
+    }
+
+    /** O polling roda a cada 10 s: o alerta de pagamento que não dá para resolver sai no máximo 1 vez por hora. */
+    private function warnOncePerHour(Payment $payment, string $reason): void
+    {
+        if (Cache::add("expire-blocked:{$payment->id}", true, 3600)) {
+            Log::error("Expiração bloqueada: {$reason}; payment={$payment->id} account={$payment->account_id}");
+        }
     }
 
     private function applyPixStatus(Payment $payment, NormalizedStatus $status): void
@@ -235,6 +259,8 @@ class ProcessPaymentController extends Controller
             ->get();
 
         foreach ($payments as $payment) {
+            TenantContext::tagLogs($payment->account_id);
+
             try {
                 $status = $this->gateways->forPayment($payment)->pixStatus($payment);
             } catch (GatewayUnavailableException) {

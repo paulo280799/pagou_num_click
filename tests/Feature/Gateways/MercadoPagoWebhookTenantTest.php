@@ -113,10 +113,29 @@ class MercadoPagoWebhookTenantTest extends TestCase
         $this->assertSame(StatusPaymentEnum::PAID, $payment->refresh()->status);
     }
 
-    public function test_legacy_url_is_rejected_when_no_account_uses_the_env(): void
+    public function test_legacy_url_without_env_account_is_validated_with_the_secret_of_the_orders_owner(): void
     {
+        $payment = $this->pending($this->a);
+        Http::fake(['*mercadopago.test/v1/orders/*' => Http::response($this->mpPix(['status' => 'processed', 'status_detail' => 'accredited']), 200)]);
+
+        $this->notify('/api/webhooks/mercadopago', 'segredo-B')->assertStatus(401);   // segredo de outra conta
+        $this->assertSame(StatusPaymentEnum::PENDING, $payment->refresh()->status);
+
+        $this->notify('/api/webhooks/mercadopago', 'segredo-A')->assertOk();          // segredo da dona do pedido
+        $this->assertSame(StatusPaymentEnum::PAID, $payment->refresh()->status);
+    }
+
+    public function test_legacy_url_for_an_unknown_order_cannot_be_validated(): void
+    {
+        $this->notify('/api/webhooks/mercadopago', 'segredo-A', 'ORDDESCONHECIDO0000000000')->assertStatus(401);
+    }
+
+    public function test_a_literal_wildcard_or_non_uuid_in_the_url_is_not_a_route(): void
+    {
+        config(['gateways.mercadopago.webhook_secret' => 'segredo-env']);
         $this->pending($this->a);
 
-        $this->notify('/api/webhooks/mercadopago', 'segredo-A')->assertStatus(401);
+        $this->notify('/api/webhooks/mercadopago/*', 'segredo-env')->assertNotFound();
+        $this->notify('/api/webhooks/mercadopago/qualquer-coisa', 'segredo-env')->assertNotFound();
     }
 }

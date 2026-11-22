@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Enums\GatewayEnum;
+use App\Enums\PaymentMethodEnum;
 use App\Enums\StatusPaymentEnum;
 use App\Models\GatewayCredential;
 use App\Models\Payment;
@@ -161,13 +162,21 @@ class GatewayCredentialsPage extends Page implements HasForms
         ];
     }
 
-    /** Há cobrança em andamento que depende deste gateway? Desativá-lo agora a deixaria sem consulta de status. */
+    /**
+     * Há cobrança que ainda depende deste gateway? Desativá-lo agora a deixaria sem consulta de status:
+     * PIX pendente (mesmo vencido, até o scheduler resolver), cartão em tentativa, e o PIX remanescente de cartão
+     * pago, que é vigiado até expirar+5 min para alertar estorno manual.
+     */
     private function openPaymentsOn(GatewayEnum $gateway): int
     {
-        return Payment::where('status', StatusPaymentEnum::PENDING)
-            ->where(fn ($q) => $q
-                ->where(fn ($q) => $q->where('pix_gateway', $gateway->value)->where('expirationDate', '>', now()))
-                ->orWhere(fn ($q) => $q->where('card_gateway', $gateway->value)->whereNotNull('card_attempt_key')))
+        return Payment::where(fn ($q) => $q
+            ->where(fn ($q) => $q->where('status', StatusPaymentEnum::PENDING)->where(fn ($q) => $q
+                ->where(fn ($q) => $q->where('pix_gateway', $gateway->value)->whereNotNull('ide'))
+                ->orWhere(fn ($q) => $q->where('card_gateway', $gateway->value)->whereNotNull('card_attempt_key'))))
+            ->orWhere(fn ($q) => $q->where('status', StatusPaymentEnum::PAID)
+                ->where('payment_method', PaymentMethodEnum::CREDIT_CARD)
+                ->where('pix_gateway', $gateway->value)->whereNotNull('ide')
+                ->where('expirationDate', '>=', now()->subMinutes(5))))
             ->count();
     }
 
@@ -222,27 +231,41 @@ class GatewayCredentialsPage extends Page implements HasForms
             return;
         }
 
+        $label = $gateway === GatewayEnum::PAGARME ? 'Pagar.me' : 'Mercado Pago';
         $changedSecrets = $merged !== $current;
 
-        $row = GatewayCredential::updateOrCreate(
-            ['gateway' => $gateway->value],
-            ['credentials' => $merged, 'enabled' => $enabled] + ($changedSecrets ? ['last_validated_at' => null, 'last_validation_error' => null] : []),
-        );
-
-        if ($enabled) {
-            $this->validateRow($row);
+        // Valida ANTES de gravar: uma credencial colada errada não pode substituir a que funciona.
+        $ok = true;
+        $error = null;
+        if ($enabled && ($changedSecrets || ! $row || ! $row->last_validated_at)) {
+            [$ok, $error] = app(CredentialTester::class)->test($gateway, $merged);
         }
-    }
 
-    private function validateRow(GatewayCredential $row): void
-    {
-        [$ok, $error] = app(CredentialTester::class)->test($row->gateway, $row->credentials);
+        if (! $ok && $row) {
+            Notification::make()->title("{$label}: a credencial nova foi recusada; mantivemos a anterior.")->body($error)->danger()->send();
 
-        $row->update(['last_validated_at' => $ok ? now() : null, 'last_validation_error' => $ok ? null : $error]);
+            return;
+        }
 
-        $label = $row->gateway === GatewayEnum::PAGARME ? 'Pagar.me' : 'Mercado Pago';
-        $ok
-            ? Notification::make()->title("{$label}: credencial validada e salva.")->success()->send()
-            : Notification::make()->title("{$label}: salva, mas a validação falhou.")->body($error)->warning()->send();
+        if (! $ok) {
+            // gateway novo e credencial ruim: guarda o rascunho DESATIVADO (nada cobra com ela) para corrigir depois
+            GatewayCredential::updateOrCreate(['gateway' => $gateway->value], [
+                'credentials' => $merged, 'enabled' => false, 'last_validated_at' => null, 'last_validation_error' => $error,
+            ]);
+            Notification::make()->title("{$label}: salva desativada, a validação falhou.")->body($error)->warning()->send();
+
+            return;
+        }
+
+        GatewayCredential::updateOrCreate(['gateway' => $gateway->value], [
+            'credentials' => $merged,
+            'enabled' => $enabled,
+        ] + ($enabled && ($changedSecrets || ! $row || ! $row->last_validated_at)
+            ? ['last_validated_at' => now(), 'last_validation_error' => null]
+            : ($changedSecrets ? ['last_validated_at' => null, 'last_validation_error' => null] : [])));
+
+        if ($enabled && ($changedSecrets || ! $row || ! $row->last_validated_at)) {
+            Notification::make()->title("{$label}: credencial validada e salva.")->success()->send();
+        }
     }
 }

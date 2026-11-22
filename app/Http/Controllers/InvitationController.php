@@ -14,7 +14,7 @@ class InvitationController extends Controller
 {
     private function ensurePending(User $user): void
     {
-        abort_if($user->password_set_at !== null, 410, 'Este convite já foi utilizado.');
+        abort_if(! $user->invitation_pending, 410, 'Este convite já foi utilizado.');
     }
 
     public function show(Request $request, User $user): View
@@ -32,7 +32,7 @@ class InvitationController extends Controller
 
         $user->forceFill([
             'password' => $data['password'],
-            'password_set_at' => now(),
+            'invitation_pending' => false,
             'email_verified_at' => $user->email_verified_at ?? now(),
         ])->save();
 

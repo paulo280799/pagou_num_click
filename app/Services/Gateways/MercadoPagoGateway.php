@@ -8,6 +8,7 @@ use App\Support\ChargeOutcome;
 use App\Support\ChargeResult;
 use App\Support\Gateways\CardCheckoutConfig;
 use App\Support\Gateways\CardRequest;
+use App\Support\Gateways\GatewayCredentialsRejectedException;
 use App\Support\Gateways\GatewayRequestException;
 use App\Support\Gateways\GatewayUnavailableException;
 use App\Support\Gateways\NormalizedStatus;
@@ -253,6 +254,10 @@ class MercadoPagoGateway implements PaymentGateway
             $response = $this->http($this->queryTimeout())->get($this->url("/v1/orders/{$externalId}"));
         } catch (ConnectionException $e) {
             throw $this->unavailable('falha de conexão', previous: $e);
+        }
+
+        if (in_array($response->status(), [401, 403], true)) {
+            throw new GatewayCredentialsRejectedException("Mercado Pago: credencial recusada (HTTP {$response->status()})", $this->name(), $response->status());
         }
 
         if ($this->isInfraFailure($response)) {

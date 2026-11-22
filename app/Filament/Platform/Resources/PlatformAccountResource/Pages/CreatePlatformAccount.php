@@ -24,12 +24,13 @@ class CreatePlatformAccount extends CreateRecord
         return DB::transaction(function () use ($data) {
             $account = Account::create(['name' => $data['name']]);
 
-            User::create([
+            $owner = User::create([
                 'name' => $data['owner_name'],
                 'email' => $data['owner_email'],
                 'password' => Str::random(64),
                 'account_id' => $account->id,
             ]);
+            $owner->forceFill(['invitation_pending' => true])->save(); // fora do $fillable de propósito
 
             return $account;
         });

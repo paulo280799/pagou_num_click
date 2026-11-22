@@ -8,6 +8,7 @@ use App\Enums\StatusPaymentEnum;
 use App\Support\ChargeResult;
 use App\Support\Gateways\CardCheckoutConfig;
 use App\Support\Gateways\CardRequest;
+use App\Support\Gateways\GatewayCredentialsRejectedException;
 use App\Support\Gateways\GatewayRequestException;
 use App\Support\Gateways\GatewayUnavailableException;
 use App\Support\Gateways\NormalizedStatus;
@@ -181,6 +182,11 @@ class PagarmeGateway implements PaymentGateway
             $response = $this->http($this->queryTimeout())->get($this->url("/v5/orders/{$externalId}"));
         } catch (ConnectionException $e) {
             throw new GatewayUnavailableException('Pagar.me: falha de conexão', $this->name(), null, null, $e);
+        }
+
+        // credencial recusada (401/403) é configuração quebrada, não "o PIX não existe": nunca pode virar cancelamento
+        if (in_array($response->status(), [401, 403], true)) {
+            throw new GatewayCredentialsRejectedException("Pagar.me: credencial recusada (HTTP {$response->status()})", $this->name(), $response->status());
         }
 
         if ($this->isInfraFailure($response)) {
