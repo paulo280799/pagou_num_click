@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (29)
+- **Correção (achada na validação manual): campo "Token de acesso" aparecia vazio.** O Filament preenche o campo com o valor do registro (`api_token`, que agora é nulo porque só o hash existe) e isso sobrescrevia o `default()`; passou a `afterStateHydrated`, que mostra o prefixo mascarado (`pnc_XErl••••`). Logo depois de "Regenerar token" o token inteiro fica no campo e aparece um botão de copiar (ação de sufixo; `copyable()` não existe em campos de formulário); mascarado, o botão não aparece. Teste do estado do campo ao abrir e após regenerar.
+
 ## 2026-11-22 (28)
 - **Correção: `/admin` derrubava o servidor (segfault, `ERR_EMPTY_RESPONSE`) com Telescope ligado (`APP_ENV=local`).** A tag `account:{uuid}` da fase 5 chamava `auth()->user()` dentro do gancho do Telescope, que roda ao registrar a própria query de carregar o usuário: recursão infinita. Agora usa `TenantContext::peekAccountId()` (nunca resolve o usuário). A suíte não pegou porque `TELESCOPE_ENABLED=false` nos testes; adicionado teste de regressão do `peekAccountId` e a validação manual cobre o painel por HTTP real.
 

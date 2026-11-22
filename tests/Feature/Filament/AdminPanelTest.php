@@ -127,9 +127,18 @@ class AdminPanelTest extends TestCase
     public function test_config_regenerate_token_replaces_api_token(): void
     {
         [$config, $form] = $this->configEditor();
+        $maskedAtOpen = $config->maskedApiToken();   // o formulário abriu com este token
         $config->forceFill(['api_token' => 'token-antigo'])->save();
 
+        // ao abrir, o campo mostra o prefixo mascarado (nunca vazio, nunca o token inteiro)
+        $form->assertFormSet(['api_token' => $maskedAtOpen]);
+
         $form->callFormComponentAction('integration', 'regenerateToken');
+
+        // logo depois de gerar, o token inteiro fica no campo (com botão de copiar)
+        $shown = $form->get('data.api_token');
+        $this->assertStringStartsWith('pnc_', $shown);
+        $this->assertStringNotContainsString('•', $shown);
 
         $fresh = $config->fresh();
         $this->assertNull($fresh->api_token, 'o valor puro nunca volta do banco');

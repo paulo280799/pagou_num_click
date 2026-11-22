@@ -104,9 +104,19 @@ class ConfigResource extends Resource
                             ->label('Token de acesso')
                             ->helperText(fn ($record) => 'Envie no header Authorization: Bearer. O token completo só aparece ao gerar; para trocar, use "Regenerar token".'
                                 .($record?->api_token_last_used_at ? ' Último uso: '.$record->api_token_last_used_at->timezone(config('app.timezone'))->format('d/m/Y H:i').'.' : ''))
-                            ->default(fn ($record) => $record?->maskedApiToken() ?? 'Token não gerado ainda.')
+                            // o valor do registro é nulo (só o hash existe): sem isto o Filament deixa o campo vazio
+                            ->afterStateHydrated(fn (Forms\Components\TextInput $component, $record) => $component->state($record?->maskedApiToken() ?? 'Token não gerado ainda.'))
                             ->disabled()
                             ->dehydrated(false)
+                            // só há o que copiar logo depois de gerar (token inteiro no campo); mascarado, copiar não serve
+                            ->suffixAction(fn ($state) => Forms\Components\Actions\Action::make('copyToken')
+                                ->icon('heroicon-m-clipboard-document')
+                                ->tooltip('Copiar token')
+                                ->visible(is_string($state) && str_starts_with($state, 'pnc_') && ! str_contains($state, '•'))
+                                ->action(function (\Livewire\Component $livewire, $state) {
+                                    $livewire->js('window.navigator.clipboard.writeText('.json_encode($state).')');
+                                    Notification::make()->title('Token copiado')->success()->send();
+                                }))
                             ->columnSpanFull(),
                         Forms\Components\TextInput::make('notification_url')
                             ->label('URL de notificação (webhook)')
