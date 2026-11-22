@@ -128,23 +128,6 @@ class GatewayCredentialsPageTest extends TestCase
         $this->assertFalse(app(\App\Services\Gateways\GatewayManager::class)->forTenant()->hasAnyGateway());
     }
 
-    public function test_cannot_disable_while_an_overdue_pending_pix_or_a_watched_card_pix_depends_on_it(): void
-    {
-        Http::fake(['*' => Http::response([], 200)]);
-        GatewayCredential::create(['gateway' => GatewayEnum::PAGARME, 'credentials' => ['user' => 'sk_test_AAAA'], 'enabled' => true]);
-
-        // PENDING já vencido (o scheduler ainda não resolveu): continua dependendo do gateway
-        $overdue = Payment::factory()->pending()->create(['account_id' => $this->account->id, 'ide' => 'o1', 'pix_gateway' => GatewayEnum::PAGARME, 'expirationDate' => now()->subMinutes(2)]);
-        Livewire::test(GatewayCredentialsPage::class)->fillForm(['pagarme_enabled' => false])->call('save');
-        $this->assertTrue($this->row(GatewayEnum::PAGARME)->enabled);
-        $overdue->forceFill(['status' => 'CANCELED'])->save();
-
-        // PIX remanescente de cartão pago, ainda vigiado
-        Payment::factory()->paid()->create(['account_id' => $this->account->id, 'ide' => 'o2', 'pix_gateway' => GatewayEnum::PAGARME, 'payment_method' => 'CREDIT_CARD', 'expirationDate' => now()->addMinutes(3)]);
-        Livewire::test(GatewayCredentialsPage::class)->fillForm(['pagarme_enabled' => false])->call('save');
-        $this->assertTrue($this->row(GatewayEnum::PAGARME)->enabled);
-    }
-
     public function test_fixing_a_failed_draft_reactivates_it_and_never_claims_to_keep_a_broken_one(): void
     {
         Http::fake(['*mercadopago.test/users/me' => Http::sequence()->push([], 403)->push([], 403)->push(['site_id' => 'MLB'], 200)]);
@@ -207,26 +190,19 @@ class GatewayCredentialsPageTest extends TestCase
             ])->call('save')->assertHasNoFormErrors();
     }
 
-    public function test_both_gateways_turn_redundancy_on(): void
+    public function test_disabling_a_gateway_is_allowed_even_with_open_payments_and_tells_how_many_keep_going(): void
     {
         Http::fake(['*' => Http::response([], 200)]);
-
-        Livewire::test(GatewayCredentialsPage::class)
-            ->fillForm(['pagarme_user' => 'sk_test_AAAA', 'mp_access_token' => 'TEST-mp'])
-            ->call('save');
-
-        $this->get('/admin/gateways')->assertSee('Redundância ativa');
-    }
-
-    public function test_cannot_disable_a_gateway_with_open_payments(): void
-    {
-        Http::fake(['*' => Http::response([], 200)]);
-        GatewayCredential::create(['gateway' => GatewayEnum::PAGARME, 'credentials' => ['user' => 'sk_test_AAAA'], 'enabled' => true]);
+        GatewayCredential::create(['gateway' => GatewayEnum::PAGARME, 'credentials' => ['user' => 'sk_test_AAAA'], 'enabled' => true, 'last_validated_at' => now()]);
         Payment::factory()->pending()->create(['account_id' => $this->account->id, 'ide' => 'o1', 'pix_gateway' => GatewayEnum::PAGARME, 'expirationDate' => now()->addMinutes(10)]);
+        Payment::factory()->pending()->create(['account_id' => $this->account->id, 'ide' => 'o2', 'pix_gateway' => GatewayEnum::PAGARME, 'expirationDate' => now()->subMinutes(2)]);
 
-        Livewire::test(GatewayCredentialsPage::class)->fillForm(['pagarme_enabled' => false])->call('save');
+        Livewire::test(GatewayCredentialsPage::class)->fillForm(['pagarme_enabled' => false])->call('save')
+            ->assertNotified('Pagar.me desativado para novas cobranças.');
 
-        $this->assertTrue($this->row(GatewayEnum::PAGARME)->enabled);
+        $row = $this->row(GatewayEnum::PAGARME);
+        $this->assertFalse($row->enabled);
+        $this->assertSame('sk_test_AAAA', $row->credentials['user'], 'a credencial continua guardada para acompanhar o que já existe');
     }
 
     public function test_can_disable_when_nothing_is_open(): void
@@ -237,6 +213,17 @@ class GatewayCredentialsPageTest extends TestCase
         Livewire::test(GatewayCredentialsPage::class)->fillForm(['pagarme_enabled' => false])->call('save');
 
         $this->assertFalse($this->row(GatewayEnum::PAGARME)->enabled);
+    }
+
+    public function test_both_gateways_turn_redundancy_on(): void
+    {
+        Http::fake(['*' => Http::response([], 200)]);
+
+        Livewire::test(GatewayCredentialsPage::class)
+            ->fillForm(['pagarme_user' => 'sk_test_AAAA', 'mp_access_token' => 'TEST-mp'])
+            ->call('save');
+
+        $this->get('/admin/gateways')->assertSee('Redundância ativa');
     }
 
     public function test_page_shows_the_webhook_url_of_this_account_only(): void

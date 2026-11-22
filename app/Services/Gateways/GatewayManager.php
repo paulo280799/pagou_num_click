@@ -20,10 +20,12 @@ class GatewayManager
 
     public function forAccount(string $accountId): TenantGateways
     {
+        // credenciais de TODOS os gateways da conta (inclusive os desativados, para acompanhar cobranças que já existem);
+        // `active` diz se o gateway pode receber cobranças NOVAS
         return new TenantGateways(
             $accountId,
-            new PagarmeGateway($this->credentials->pagarme($accountId)),
-            new MercadoPagoGateway($this->credentials->mercadoPago($accountId)),
+            new PagarmeGateway($this->credentials->pagarme($accountId, true), $this->credentials->pagarme($accountId) !== null),
+            new MercadoPagoGateway($this->credentials->mercadoPago($accountId, true), $this->credentials->mercadoPago($accountId) !== null),
             $this->breaker,
         );
     }

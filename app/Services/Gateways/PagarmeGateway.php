@@ -24,11 +24,15 @@ use Illuminate\Support\Facades\Log;
 class PagarmeGateway implements PaymentGateway
 {
     /** As credenciais são da conta (tenant) que está cobrando; null = conta sem Pagar.me configurado. */
-    public function __construct(private ?PagarmeCredentials $credentials = null) {}
+    public function __construct(private ?PagarmeCredentials $credentials = null, private bool $active = true) {}
 
+    /**
+     * Entra em decisões de NOVAS cobranças? Só com credencial e ativo. Desativado, ainda consulta o que já existe
+     * (as credenciais continuam aqui), mas não é escolhido para cobrar nem oferece tokenização de cartão.
+     */
     public function isConfigured(): bool
     {
-        return $this->credentials !== null;
+        return $this->credentials !== null && $this->active;
     }
 
     public function name(): GatewayEnum
@@ -238,7 +242,7 @@ class PagarmeGateway implements PaymentGateway
 
     public function cardCheckoutConfig(): ?CardCheckoutConfig
     {
-        $key = $this->credentials?->publicKey;
+        $key = $this->active ? $this->credentials?->publicKey : null;
 
         return filled($key)
             ? new CardCheckoutConfig(GatewayEnum::PAGARME, $key, 'https://api.pagar.me/core/v5/tokens')

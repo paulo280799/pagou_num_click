@@ -75,7 +75,7 @@ class MercadoPagoWebhookController extends Controller
 
         return $account === '*'
             ? config('gateways.mercadopago.webhook_secret')
-            : $this->credentials->mercadoPago($account)?->webhookSecret;
+            : $this->credentials->mercadoPago($account, true)?->webhookSecret; // desativado também: o MP avisa de cobranças que já existem
     }
 
     private function validSignature(Request $request, string $orderId, ?string $secret): bool

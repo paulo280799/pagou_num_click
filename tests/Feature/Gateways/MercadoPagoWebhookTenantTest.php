@@ -113,6 +113,17 @@ class MercadoPagoWebhookTenantTest extends TestCase
         $this->assertSame(StatusPaymentEnum::PAID, $payment->refresh()->status);
     }
 
+    public function test_a_disabled_mercado_pago_still_validates_notifications_of_orders_that_already_exist(): void
+    {
+        GatewayCredential::withoutGlobalScopes()->where('account_id', $this->a->id)->update(['enabled' => false]);
+        $payment = $this->pending($this->a);
+        Http::fake(['*mercadopago.test/v1/orders/*' => Http::response($this->mpPix(['status' => 'processed', 'status_detail' => 'accredited']), 200)]);
+
+        $this->notify("/api/webhooks/mercadopago/{$this->a->id}", 'segredo-A')->assertOk();
+
+        $this->assertSame(StatusPaymentEnum::PAID, $payment->refresh()->status);
+    }
+
     public function test_legacy_url_without_env_account_is_validated_with_the_secret_of_the_orders_owner(): void
     {
         $payment = $this->pending($this->a);

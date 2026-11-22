@@ -24,7 +24,7 @@ Hoje: isolamento por `account_id` (UserScope) já funciona em painel e API. Falt
 - Só Mercado Pago configurado: MP vira o gateway primário daquele tenant (sem failover para Pagar.me inexistente). Só Pagar.me: comportamento de hoje, sem failover. Ambos: Pagar.me primário, MP failover.
 - Ordem de prioridade por tenant (`primary_gateway`) fica opcional; padrão Pagar.me, depois MP.
 - Cartão: precisa da chave pública do gateway do tenant (`pk_...` Pagar.me / `MP_PUBLIC_KEY`); sem ela a aba cartão não renderiza (regra atual, agora por tenant).
-- Cobrança já criada segue sempre o gateway que a criou (`pix_gateway`/`card_gateway`), mesmo se o tenant remover a credencial depois: remover credencial com cobranças `PENDING` abertas deve ser bloqueado ou avisar.
+- Cobrança já criada segue sempre o gateway que a criou (`pix_gateway`/`card_gateway`). **Decisão (2026-11-22): desativar um gateway vale só para cobranças novas**; as existentes continuam sendo acompanhadas com as credenciais guardadas (sem bloqueio, só aviso).
 - Env global deixa de ser fonte de credencial para tenants. Fica só como fallback da conta dona atual da plataforma durante a migração (produção em hospedagem sem SSH, não renomear env).
 
 ## Fase 1 — Higiene de isolamento (sem mudar produto) — FEITA (PR feature/multi-tenant-fase1)

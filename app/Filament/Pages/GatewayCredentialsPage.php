@@ -105,7 +105,7 @@ class GatewayCredentialsPage extends Page implements HasForms
             return new HtmlString('<span>Não configurado.</span>');
         }
 
-        $parts = [$row->enabled ? 'Ativo' : 'Desativado'];
+        $parts = [$row->enabled ? 'Ativo' : 'Desativado para novas cobranças'];
         $secretField = $gateway === GatewayEnum::PAGARME ? 'user' : 'access_token';
         $parts[] = 'chave '.e($row->hint($secretField) ?? '—');
         $parts[] = match (true) {
@@ -200,9 +200,9 @@ class GatewayCredentialsPage extends Page implements HasForms
     }
 
     /**
-     * Há cobrança que ainda depende deste gateway? Desativá-lo agora a deixaria sem consulta de status:
-     * PIX pendente (mesmo vencido, até o scheduler resolver), cartão em tentativa, e o PIX remanescente de cartão
-     * pago, que é vigiado até expirar+5 min para alertar estorno manual.
+     * Cobranças que ainda dependem deste gateway (para avisar ao desativar; elas NÃO são bloqueadas): PIX pendente
+     * (mesmo vencido, até o scheduler resolver), cartão em tentativa, e o PIX remanescente de cartão pago, que é
+     * vigiado até expirar+5 min para alertar estorno manual.
      */
     private function openPaymentsOn(GatewayEnum $gateway): int
     {
@@ -261,13 +261,6 @@ class GatewayCredentialsPage extends Page implements HasForms
             return;
         }
 
-        if ($row && $row->enabled && ! $enabled && ($open = $this->openPaymentsOn($gateway)) > 0) {
-            Notification::make()->title("Não dá para desativar agora: {$open} cobrança(s) em andamento dependem deste gateway.")
-                ->body('Aguarde elas expirarem ou serem pagas.')->danger()->send();
-
-            return;
-        }
-
         $label = $gateway === GatewayEnum::PAGARME ? 'Pagar.me' : 'Mercado Pago';
         $changedSecrets = $merged !== $current;
 
@@ -313,6 +306,14 @@ class GatewayCredentialsPage extends Page implements HasForms
 
         if ($enabled && ($changedSecrets || ! $row || ! $row->last_validated_at)) {
             Notification::make()->title("{$label}: credencial validada e salva.")->success()->send();
+        }
+
+        // desativar vale só para NOVAS cobranças: as que já existem seguem sendo acompanhadas por este gateway
+        if ($row && $row->enabled && ! $enabled) {
+            $open = $this->openPaymentsOn($gateway);
+            Notification::make()->title("{$label} desativado para novas cobranças.")
+                ->body($open > 0 ? "{$open} cobrança(s) em andamento continuam sendo acompanhadas por ele até terminarem." : null)
+                ->success()->send();
         }
     }
 }

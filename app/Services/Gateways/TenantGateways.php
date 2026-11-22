@@ -192,7 +192,8 @@ class TenantGateways
         $mercadoPagoAvailable = $this->cardCheckoutConfigFor(GatewayEnum::MERCADOPAGO) !== null;
 
         return match ($gateway) {
-            GatewayEnum::PAGARME => ! ($mercadoPagoAvailable && $this->breaker->isOpen($this->accountId, GatewayEnum::PAGARME)),
+            GatewayEnum::PAGARME => $this->pagarme->isConfigured()
+                && ! ($mercadoPagoAvailable && $this->breaker->isOpen($this->accountId, GatewayEnum::PAGARME)),
             GatewayEnum::MERCADOPAGO => $mercadoPagoAvailable
                 && ($this->breaker->isDegraded($this->accountId, GatewayEnum::PAGARME) || $this->pagarme->cardCheckoutConfig() === null),
         };

@@ -26,17 +26,17 @@ use Illuminate\Support\Str;
 class MercadoPagoGateway implements PaymentGateway
 {
     /** As credenciais são da conta (tenant) que está cobrando; null = conta sem Mercado Pago configurado. */
-    public function __construct(private ?MercadoPagoCredentials $credentials = null) {}
+    public function __construct(private ?MercadoPagoCredentials $credentials = null, private bool $active = true) {}
 
     public function name(): GatewayEnum
     {
         return GatewayEnum::MERCADOPAGO;
     }
 
-    /** Só existe com credencial da conta: sem ela não há failover (e nunca se usa a credencial de outra conta). */
+    /** Só existe com credencial da conta e ativo: sem ela não há failover (nem se usa a credencial de outra conta). Desativado, ainda consulta o que já existe. */
     public function isConfigured(): bool
     {
-        return $this->credentials !== null;
+        return $this->credentials !== null && $this->active;
     }
 
     private function url(string $path): string
