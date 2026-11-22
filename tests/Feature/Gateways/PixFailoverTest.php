@@ -6,7 +6,7 @@ use App\Enums\GatewayEnum;
 use App\Enums\StatusPaymentEnum;
 use App\Models\Payment;
 use App\Services\Gateways\GatewayManager;
-use App\Services\Gateways\MercadoPagoGateway;
+use App\Services\Gateways\CircuitBreaker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
@@ -180,11 +180,10 @@ class PixFailoverTest extends TestCase
 
     public function test_without_mercado_pago_credentials_behaviour_is_unchanged(): void
     {
-        $this->fakeAccountWithToken();
+        $account = $this->fakeAccountWithToken();
         Http::fake(['*/v5/orders' => Http::response(['message' => 'boom'], 500)]);
 
-        $this->assertFalse(app(MercadoPagoGateway::class)->isEnabled());
-        $this->assertFalse(app(GatewayManager::class)->fallbackEnabled());
+        $this->assertFalse(app(GatewayManager::class)->forAccount($account->id)->fallbackEnabled());
 
         // o status do provedor sobe como sempre, sem tentar outro gateway
         $this->createPayment()->assertStatus(500)->assertJson(['success' => false, 'errors' => ['message' => 'boom']]);
@@ -255,8 +254,8 @@ class PixFailoverTest extends TestCase
     public function test_open_breaker_skips_pagarme_and_goes_straight_to_mercado_pago(): void
     {
         $this->enableMercadoPago();
-        $this->fakeAccountWithToken();
-        Cache::put('gateways:circuit:PAGARME:opened_at', now()->timestamp);
+        $account = $this->fakeAccountWithToken();
+        Cache::put(CircuitBreaker::key($account->id, GatewayEnum::PAGARME, 'opened_at'), now()->timestamp);
         Http::fake([
             '*/v5/orders' => Http::response($this->pagarmePix(), 200),
             '*mercadopago.test/*' => Http::response($this->mpPix(), 201),
@@ -290,9 +289,9 @@ class PixFailoverTest extends TestCase
     public function test_half_open_breaker_probes_pagarme_and_closes_on_success(): void
     {
         $this->enableMercadoPago();
-        $this->fakeAccountWithToken();
+        $account = $this->fakeAccountWithToken();
         // aberto há mais que o cooldown (120 s): a próxima chamada é a sonda
-        Cache::put('gateways:circuit:PAGARME:opened_at', now()->subSeconds(300)->timestamp);
+        Cache::put(CircuitBreaker::key($account->id, GatewayEnum::PAGARME, 'opened_at'), now()->subSeconds(300)->timestamp);
         Http::fake([
             '*/v5/orders' => Http::response($this->pagarmePix(), 200),
             '*mercadopago.test/*' => Http::response($this->mpPix(), 201),
@@ -300,14 +299,14 @@ class PixFailoverTest extends TestCase
 
         $this->createPayment()->assertStatus(201)->assertJson(['gateway' => 'pagarme']);
 
-        $this->assertNull(Cache::get('gateways:circuit:PAGARME:opened_at'));
+        $this->assertNull(Cache::get(CircuitBreaker::key($account->id, GatewayEnum::PAGARME, 'opened_at')));
     }
 
     public function test_failed_probe_reopens_the_breaker_immediately(): void
     {
         $this->enableMercadoPago();
-        $this->fakeAccountWithToken();
-        Cache::put('gateways:circuit:PAGARME:opened_at', now()->subSeconds(300)->timestamp);
+        $account = $this->fakeAccountWithToken();
+        Cache::put(CircuitBreaker::key($account->id, GatewayEnum::PAGARME, 'opened_at'), now()->subSeconds(300)->timestamp);
         Http::fake([
             '*/v5/orders' => Http::response(['message' => 'boom'], 500),
             '*mercadopago.test/*' => Http::response($this->mpPix(), 201),
@@ -315,15 +314,15 @@ class PixFailoverTest extends TestCase
 
         $this->createPayment()->assertStatus(201)->assertJson(['gateway' => 'mercadopago']);
 
-        $this->assertGreaterThanOrEqual(now()->subSeconds(5)->timestamp, Cache::get('gateways:circuit:PAGARME:opened_at'));
-        $this->assertTrue(app(\App\Services\Gateways\CircuitBreaker::class)->isOpen(GatewayEnum::PAGARME));
+        $this->assertGreaterThanOrEqual(now()->subSeconds(5)->timestamp, Cache::get(CircuitBreaker::key($account->id, GatewayEnum::PAGARME, 'opened_at')));
+        $this->assertTrue(app(CircuitBreaker::class)->isOpen($account->id, GatewayEnum::PAGARME));
     }
 
     public function test_breaker_failures_expire_with_the_window(): void
     {
         $this->enableMercadoPago();
         config(['gateways.circuit.failures' => 3, 'gateways.circuit.window' => 60]);
-        $this->fakeAccountWithToken();
+        $account = $this->fakeAccountWithToken();
         Http::fake([
             '*/v5/orders' => Http::response(['message' => 'boom'], 500),
             '*mercadopago.test/*' => Http::response($this->mpPix(), 201),
@@ -336,8 +335,8 @@ class PixFailoverTest extends TestCase
         Carbon::setTestNow(now()->addSeconds(120));
 
         $this->createPayment()->assertStatus(201);
-        $this->assertFalse(app(\App\Services\Gateways\CircuitBreaker::class)->isOpen(GatewayEnum::PAGARME));
-        $this->assertSame(1, Cache::get('gateways:circuit:PAGARME:failures'));
+        $this->assertFalse(app(CircuitBreaker::class)->isOpen($account->id, GatewayEnum::PAGARME));
+        $this->assertSame(1, Cache::get(CircuitBreaker::key($account->id, GatewayEnum::PAGARME, 'failures')));
     }
 
     public function test_old_env_format_still_drives_pagarme_config(): void

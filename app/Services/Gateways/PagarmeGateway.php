@@ -12,6 +12,7 @@ use App\Support\Gateways\GatewayRequestException;
 use App\Support\Gateways\GatewayUnavailableException;
 use App\Support\Gateways\NormalizedStatus;
 use App\Support\Gateways\PixCharge;
+use App\Support\Gateways\PagarmeCredentials;
 use App\Support\Gateways\PixRequest;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -21,6 +22,14 @@ use Illuminate\Support\Facades\Log;
 
 class PagarmeGateway implements PaymentGateway
 {
+    /** As credenciais são da conta (tenant) que está cobrando; null = conta sem Pagar.me configurado. */
+    public function __construct(private ?PagarmeCredentials $credentials = null) {}
+
+    public function isConfigured(): bool
+    {
+        return $this->credentials !== null;
+    }
+
     public function name(): GatewayEnum
     {
         return GatewayEnum::PAGARME;
@@ -33,7 +42,7 @@ class PagarmeGateway implements PaymentGateway
 
     private function http(?int $timeout = null): PendingRequest
     {
-        $request = Http::withBasicAuth(config('integration.user_integration'), config('integration.password_integration'));
+        $request = Http::withBasicAuth((string) $this->credentials?->user, (string) $this->credentials?->password);
 
         return $timeout === null ? $request : $request->timeout($timeout);
     }
@@ -223,7 +232,7 @@ class PagarmeGateway implements PaymentGateway
 
     public function cardCheckoutConfig(): ?CardCheckoutConfig
     {
-        $key = config('integration.public_key');
+        $key = $this->credentials?->publicKey;
 
         return filled($key)
             ? new CardCheckoutConfig(GatewayEnum::PAGARME, $key, 'https://api.pagar.me/core/v5/tokens')

@@ -11,6 +11,7 @@ use App\Support\Gateways\CardRequest;
 use App\Support\Gateways\GatewayRequestException;
 use App\Support\Gateways\GatewayUnavailableException;
 use App\Support\Gateways\NormalizedStatus;
+use App\Support\Gateways\MercadoPagoCredentials;
 use App\Support\Gateways\PixCharge;
 use App\Support\Gateways\PixRequest;
 use Illuminate\Http\Client\ConnectionException;
@@ -23,15 +24,18 @@ use Illuminate\Support\Str;
 /** Gateway de redundância, sobre a Orders API (`/v1/orders`). Contrato em docs/mercadopago/. */
 class MercadoPagoGateway implements PaymentGateway
 {
+    /** As credenciais são da conta (tenant) que está cobrando; null = conta sem Mercado Pago configurado. */
+    public function __construct(private ?MercadoPagoCredentials $credentials = null) {}
+
     public function name(): GatewayEnum
     {
         return GatewayEnum::MERCADOPAGO;
     }
 
-    /** Failover só existe com credencial: sem MP_ACCESS_TOKEN o sistema se comporta como antes. */
-    public function isEnabled(): bool
+    /** Só existe com credencial da conta: sem ela não há failover (e nunca se usa a credencial de outra conta). */
+    public function isConfigured(): bool
     {
-        return (bool) config('gateways.mercadopago.enabled') && filled(config('gateways.mercadopago.access_token'));
+        return $this->credentials !== null;
     }
 
     private function url(string $path): string
@@ -41,7 +45,7 @@ class MercadoPagoGateway implements PaymentGateway
 
     private function http(int $timeout, ?string $idempotencyKey = null, ?string $deviceId = null): PendingRequest
     {
-        $request = Http::withToken((string) config('gateways.mercadopago.access_token'))->acceptJson()->timeout($timeout);
+        $request = Http::withToken((string) $this->credentials?->accessToken)->acceptJson()->timeout($timeout);
 
         if ($idempotencyKey !== null) {
             $request = $request->withHeaders(['X-Idempotency-Key' => $idempotencyKey]);
@@ -292,9 +296,9 @@ class MercadoPagoGateway implements PaymentGateway
 
     public function cardCheckoutConfig(): ?CardCheckoutConfig
     {
-        $key = config('gateways.mercadopago.public_key');
+        $key = $this->credentials?->publicKey;
 
-        return $this->isEnabled() && filled($key)
+        return $this->isConfigured() && filled($key)
             ? new CardCheckoutConfig(GatewayEnum::MERCADOPAGO, $key)
             : null;
     }

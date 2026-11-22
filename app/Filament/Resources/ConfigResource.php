@@ -183,7 +183,7 @@ class ConfigResource extends Resource
                 Forms\Components\Section::make('Tarifas — Mercado Pago (redundância)')
                     ->description('Usadas só nas vendas processadas pelo Mercado Pago, quando o Pagar.me está indisponível. Em branco: a tarifa aparece como "Não configurada".')
                     ->icon('heroicon-o-arrow-path-rounded-square')
-                    ->visible(fn (): bool => app(\App\Services\Gateways\MercadoPagoGateway::class)->isEnabled())
+                    ->visible(fn (): bool => app(\App\Services\Gateways\GatewayManager::class)->forTenant()->fallbackEnabled())
                     ->collapsed()
                     ->columns(4)
                     ->schema([

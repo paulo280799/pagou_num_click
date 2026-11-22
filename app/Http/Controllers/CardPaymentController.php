@@ -7,6 +7,7 @@ use App\Enums\StatusPaymentEnum;
 use App\Http\Requests\PayCardRequest;
 use App\Models\Payment;
 use App\Services\Gateways\GatewayManager;
+use App\Services\Gateways\TenantGateways;
 use App\Support\ChargeOutcome;
 use App\Support\ChargeResult;
 use App\Support\Gateways\CardCheckoutConfig;
@@ -34,7 +35,7 @@ class CardPaymentController extends Controller
         abort_if($payment->expirationDate && Carbon::parse($payment->expirationDate)->isPast(), 409);
         abort_if($payment->customer === null || ! $payment->allowsMethod('credit_card'), 409);
 
-        $config = $this->gateways->cardCheckoutConfig();
+        $config = $this->gateways->forPayment($payment)->cardCheckoutConfig();
         abort_if($config === null, 409);
 
         return response()->json($this->configPayload($config, $payment));
@@ -44,10 +45,12 @@ class CardPaymentController extends Controller
     {
         $validated = $request->validated();
         $gateway = GatewayEnum::from(strtoupper($validated['gateway'] ?? 'pagarme'));
+        // cada conta cobra com as próprias credenciais: o tenant é o dono do Payment
+        $tenant = $this->gateways->forPayment(Payment::withoutGlobalScopes()->findOrFail($id));
 
         // O token do browser só vale no gateway em que foi gerado: se a decisão mudou, nada é cobrado e o browser re-tokeniza.
-        if (! $this->gateways->isCardGatewayStillCurrent($gateway)) {
-            return $this->fallbackResponse($this->gateways->cardCheckoutConfig(), Payment::withoutGlobalScopes()->findOrFail($id));
+        if (! $tenant->isCardGatewayStillCurrent($gateway)) {
+            return $this->fallbackResponse($tenant->cardCheckoutConfig(), Payment::withoutGlobalScopes()->findOrFail($id));
         }
 
         // Fase 1 — reservar a tentativa sob lock
@@ -97,13 +100,13 @@ class CardPaymentController extends Controller
 
         // Fase 2 — chamar o gateway (sem lock)
         try {
-            $result = $this->gateways->gateway($gateway)->chargeCard($cardRequest, $payment->card_attempt_key);
+            $result = $tenant->gateway($gateway)->chargeCard($cardRequest, $payment->card_attempt_key);
         } catch (GatewayUnavailableException $e) {
             Log::error("Cartão: gateway indisponível ({$e->getMessage()}); gateway={$gateway->value} payment={$payment->id}");
 
-            $this->gateways->reportFailure($gateway);
+            $tenant->reportFailure($gateway);
 
-            $fallback = $this->tryInFlightFallback($payment, $gateway);
+            $fallback = $this->tryInFlightFallback($tenant, $payment, $gateway);
 
             if ($fallback instanceof JsonResponse) {
                 return $fallback;
@@ -155,20 +158,20 @@ class CardPaymentController extends Controller
      *
      * @return JsonResponse|ChargeResult|null resposta de fallback | cobrança que existe no Pagar.me | em dúvida (fica "processando")
      */
-    private function tryInFlightFallback(Payment $payment, GatewayEnum $failed): JsonResponse|ChargeResult|null
+    private function tryInFlightFallback(TenantGateways $tenant, Payment $payment, GatewayEnum $failed): JsonResponse|ChargeResult|null
     {
         if ($failed !== GatewayEnum::PAGARME) {
             return null;
         }
 
-        $target = $this->gateways->cardCheckoutConfigFor(GatewayEnum::MERCADOPAGO);
+        $target = $tenant->cardCheckoutConfigFor(GatewayEnum::MERCADOPAGO);
 
         if ($target === null) {
             return null;
         }
 
         try {
-            $existing = $this->gateways->gateway(GatewayEnum::PAGARME)->findCardAttempt($payment->id);
+            $existing = $tenant->gateway(GatewayEnum::PAGARME)->findCardAttempt($payment->id);
         } catch (GatewayUnavailableException) {
             return null; // não deu para provar: o polling reconcilia depois
         }

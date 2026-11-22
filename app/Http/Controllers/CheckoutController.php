@@ -24,13 +24,23 @@ class CheckoutController extends Controller
     {
         $validated = $request->validated();
 
+        // cada conta cobra com as próprias credenciais: sem nenhum gateway cadastrado não há cobrança possível
+        $tenant = $this->gateways->forTenant();
+
+        if (! $tenant->hasAnyGateway()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nenhum gateway de pagamento configurado para esta conta. Cadastre as credenciais no painel.',
+            ], 422);
+        }
+
         $methods = $validated['payment_methods'] ?? CheckoutRequest::METHODS;
         $methods = array_values(array_intersect(CheckoutRequest::METHODS, $methods));
         $cardRequested = in_array('credit_card', $methods, true);
 
         // Cartão pedido explicitamente mas sem chave pública em nenhum gateway: falha cedo em vez de gerar checkout sem cartão.
         // Se `payment_methods` foi omitido, o padrão (PIX + cartão) degrada para PIX no checkout.
-        if ($cardRequested && isset($validated['payment_methods']) && ! $this->gateways->cardEnabled()) {
+        if ($cardRequested && isset($validated['payment_methods']) && ! $tenant->cardEnabled()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Pagamento com cartão indisponível nesta conta.',
@@ -92,7 +102,7 @@ class CheckoutController extends Controller
         }
 
         try {
-            $charge = $this->gateways->createPix(new PixRequest(
+            $charge = $tenant->createPix(new PixRequest(
                 paymentId: $paymentId,
                 amountCents: $totalCents,
                 items: $items,

@@ -78,7 +78,7 @@ class ProcessPaymentController extends Controller
             return;
         }
 
-        $this->applyPixStatus($payment, $this->gateways->pixStatus($payment));
+        $this->applyPixStatus($payment, $this->gateways->forPayment($payment)->pixStatus($payment));
     }
 
     /**
@@ -89,7 +89,7 @@ class ProcessPaymentController extends Controller
     {
         if ($payment->ide) {
             try {
-                $this->applyPixStatus($payment, $this->gateways->pixStatus($payment));
+                $this->applyPixStatus($payment, $this->gateways->forPayment($payment)->pixStatus($payment));
             } catch (GatewayUnavailableException $e) {
                 $graceEnd = Carbon::parse($payment->expirationDate)->addMinutes((int) config('gateways.expiry_grace_minutes'));
 
@@ -159,7 +159,7 @@ class ProcessPaymentController extends Controller
     {
         try {
             if ($payment->card_order_id) {
-                $result = $this->gateways->cardStatus($payment);
+                $result = $this->gateways->forPayment($payment)->cardStatus($payment);
             } else {
                 $result = $this->reconcileTimedOutAttempt($payment);
                 if ($result === false) {
@@ -210,7 +210,7 @@ class ProcessPaymentController extends Controller
         }
 
         try {
-            return $this->gateways->findCardAttempt($payment);
+            return $this->gateways->forPayment($payment)->findCardAttempt($payment);
         } catch (GatewayUnavailableException) {
             return false;
         }
@@ -231,7 +231,7 @@ class ProcessPaymentController extends Controller
 
         foreach ($payments as $payment) {
             try {
-                $status = $this->gateways->pixStatus($payment);
+                $status = $this->gateways->forPayment($payment)->pixStatus($payment);
             } catch (GatewayUnavailableException) {
                 continue;
             }

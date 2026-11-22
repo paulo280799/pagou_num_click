@@ -16,6 +16,9 @@ interface PaymentGateway
 {
     public function name(): GatewayEnum;
 
+    /** A conta tem credencial deste provedor? Sem ela o gateway não entra em nenhuma decisão. */
+    public function isConfigured(): bool;
+
     /** @throws GatewayUnavailableException infra (conexão, timeout, 5xx, 429)  @throws GatewayRequestException 4xx */
     public function createPix(PixRequest $request): PixCharge;
 
