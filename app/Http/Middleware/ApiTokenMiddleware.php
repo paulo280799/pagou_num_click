@@ -3,7 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Config;
-use App\Models\User;
+use App\Support\TenantContext;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,15 +33,8 @@ class ApiTokenMiddleware
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
-        $user = User::where('account_id', $config->account_id)->first();
-
-        // Conta sem nenhum usuário: não há com quem autenticar a requisição
-        if (! $user) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
-
-        // Autenticar o usuário via API
-        auth()->loginUsingId($user->id);
+        // O token identifica a conta (tenant); nenhum usuário é logado. UserScope e os creating() leem daqui.
+        app(TenantContext::class)->set($config->account_id);
 
         return $next($request);
     }

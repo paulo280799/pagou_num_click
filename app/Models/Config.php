@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\GatewayEnum;
 use App\Enums\PaymentMethodEnum;
 use App\Models\Scopes\UserScope;
+use App\Support\TenantContext;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -88,7 +89,7 @@ class Config extends Model
         // Intercepta antes de criar um novo item
         static::creating(function ($item) {
 
-            $item->account_id = auth()->user()->account->id;
+            $item->account_id = $item->account_id ?: app(TenantContext::class)->requireAccountId();
 
             if (empty($item->api_token)) {
                 // Gerar o token de acesso quando o modelo for criado pela primeira vez

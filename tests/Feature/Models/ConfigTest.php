@@ -61,8 +61,8 @@ class ConfigTest extends TestCase
 
     public function test_create_without_authenticated_user_fails(): void
     {
-        $this->expectException(\ErrorException::class);
-        $this->expectExceptionMessage('Attempt to read property "account" on null');
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Nenhuma conta (tenant)');
 
         Config::create([
             'duration' => '900',

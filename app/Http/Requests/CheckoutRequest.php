@@ -36,7 +36,7 @@ class CheckoutRequest extends FormRequest
                 'string',
                 'max:255',
                 Rule::unique('payments', 'refExternal')->where(fn ($query) =>
-                    $query->where('account_id', auth()->user()->account->id)
+                    $query->where('account_id', app(\App\Support\TenantContext::class)->accountId())
                 )
             ],
 

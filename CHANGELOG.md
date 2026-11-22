@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (22)
+- **Multi-tenancy, fase 1 (isolamento)**: novo `App\Support\TenantContext` (conta explícita pela API, senão a do usuário logado). `UserScope` passa a usar o contexto e **falha fechado** sem tenant (antes `auth()->user()->account->id` dava 500). `ApiTokenMiddleware` define a conta pelo token e **não loga mais o "primeiro usuário"** (conta sem usuário agora também autentica). `Payment`/`Config::creating` e a regra `unique` do `CheckoutRequest` leem o tenant do contexto. Novos testes `Tenancy/TenantIsolationTest` (duas contas: scope, falha fechada, API, painel por id). Plano completo em `docs/multi-tenant-plano.md`. Sem mudança no contrato da API.
+
 ## 2026-11-22 (21)
 - **Identidade visual unificada** (landing = fonte da verdade): painel admin deixa o Amber/cinza frio/Inter e passa ao verde `#00B389` + neutros quentes + Instrument Sans, títulos e números em Bricolage Grotesque, marca (quadrado verde) no topo. Paleta única em `config/brand.php` (`primary`/`gray`) usada por `AdminPanelProvider`; ajustes de tema em `resources/views/filament/theme.blade.php`, logo em `filament/brand.blade.php`. Checkout (`layouts/app`) troca a fonte de sistema por Instrument Sans/Bricolage; gráfico do dashboard passa de `#22c55e` para o verde da marca. Teste `AdminPanelTest` ajustado ao novo CSS das abas.
 

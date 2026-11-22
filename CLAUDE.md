@@ -103,15 +103,15 @@ Console commands in `app/Console/Commands/` are thin — they only delegate to t
 
 ### Multi-tenancy via global scope
 
-`Payment` and `Config` apply [app/Models/Scopes/UserScope.php](app/Models/Scopes/UserScope.php), filtering by `account_id = auth()->user()->account->id`. This has two consequences to keep in mind everywhere in this codebase:
+`Payment` and `Config` apply [app/Models/Scopes/UserScope.php](app/Models/Scopes/UserScope.php), filtering by the current tenant's `account_id` (`TenantContext`: API token account, else the logged-in user's account). This has two consequences to keep in mind everywhere in this codebase:
 
 - Any code path without an authenticated user (scheduler commands, public Livewire checkout) must call `withoutGlobalScopes()` to read these models.
-- `account_id` is auto-filled on `creating` from the authenticated user (for `Payment`, only if not already set).
+- `account_id` is auto-filled on `creating` from the tenant (for `Payment`/`Config`, only if not already set).
 - `Account` itself has **no** scope — any authenticated user can access any account's admin records by UUID if they know the id (see DOCUMENTACAO.md §8 for the related known issues).
 
-### API auth bridges a tokenless request into an authenticated one
+### API auth sets the tenant (no user is logged in)
 
-`ApiTokenMiddleware` (alias `api.token`) takes the `Authorization: Bearer <api_token>` header, looks up the matching `Config` (without scope), takes the **first `User`** of that account, and does `auth()->loginUsingId(...)`. This synthetic login is what makes `UserScope`, `Payment::creating`, and the `CheckoutRequest` `unique` validation rule work for API requests — there is no per-request tenant resolution beyond this.
+`ApiTokenMiddleware` (alias `api.token`) takes the `Authorization: Bearer <api_token>` header, looks up the matching `Config` (without scope) and sets the account on `App\Support\TenantContext`. `UserScope`, `Payment::creating`, `Config::creating` and the `CheckoutRequest` `unique` rule read the tenant from there (falling back to the logged-in panel user). With no tenant the scope returns nothing (fail closed). Evolution plan (per-tenant provider credentials, hashed tokens, invite-only signup): [docs/multi-tenant-plano.md](docs/multi-tenant-plano.md).
 
 ### Data model
 

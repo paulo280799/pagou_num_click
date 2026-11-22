@@ -4,6 +4,7 @@ namespace Tests\Feature\Middleware;
 
 use App\Models\Account;
 use App\Models\Config;
+use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -29,11 +30,11 @@ class ApiTokenMiddlewareTest extends TestCase
         $response->assertStatus(401)->assertJson(['error' => 'Unauthorized']);
     }
 
-    public function test_request_with_valid_token_authenticates_as_accounts_first_user(): void
+    public function test_request_with_valid_token_resolves_the_tenant_without_logging_a_user_in(): void
     {
         $account = Account::factory()->create();
-        $user = User::factory()->create(['account_id' => $account->id]);
-        $config = Config::factory()->create(['account_id' => $account->id, 'api_token' => 'valid-token']);
+        User::factory()->create(['account_id' => $account->id]);
+        Config::factory()->create(['account_id' => $account->id, 'api_token' => 'valid-token']);
 
         Http::fake([
             '*/v5/orders' => Http::response([
@@ -62,16 +63,7 @@ class ApiTokenMiddlewareTest extends TestCase
         ]);
 
         $response->assertStatus(201);
-        $this->assertAuthenticatedAs($user);
-    }
-
-    public function test_valid_token_of_account_without_users_is_unauthorized(): void
-    {
-        $account = Account::factory()->create();
-        Config::factory()->create(['account_id' => $account->id, 'api_token' => 'orphan-token', 'duration' => '900']);
-
-        $this->postJson('/api/create-payment', [], ['Authorization' => 'Bearer orphan-token'])
-            ->assertStatus(401)
-            ->assertJson(['error' => 'Unauthorized']);
+        $this->assertGuest();
+        $this->assertSame($account->id, Payment::withoutGlobalScopes()->firstOrFail()->account_id);
     }
 }

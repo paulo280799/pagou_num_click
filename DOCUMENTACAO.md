@@ -90,9 +90,10 @@ accounts 1───N payments
 - `TypeTransactionEnum`: `INFLOW`/`OUTFLOW` — **não utilizado** no código.
 
 ### Multi-tenancy
-`Payment` e `Config` usam o global scope [UserScope](app/Models/Scopes/UserScope.php): `where account_id = auth()->user()->account->id`. Consequências:
-- Em contexto sem usuário logado (comandos do scheduler, Livewire público) é preciso usar `withoutGlobalScopes()` — e o código faz isso.
-- `creating` de `Payment`/`Config` preenche `account_id` a partir do usuário autenticado (em `Payment`, só se ainda não vier preenchido).
+`Payment` e `Config` usam o global scope [UserScope](app/Models/Scopes/UserScope.php), que filtra por `account_id` do tenant atual, resolvido por [TenantContext](app/Support/TenantContext.php) (`scoped` no container): conta definida explicitamente (API, pelo token) ou, na falta dela, a do usuário logado (painel). Consequências:
+- **Sem tenant o scope falha fechado** (`1 = 0`, nada é devolvido; antes dava 500). Comandos do scheduler e o checkout público continuam usando `withoutGlobalScopes()` — e o código faz isso.
+- `creating` de `Payment`/`Config` preenche `account_id` com o tenant atual (só se ainda não vier preenchido); sem tenant lança `LogicException`.
+- Plano de evolução (credenciais por tenant, token com hash, convite): [docs/multi-tenant-plano.md](docs/multi-tenant-plano.md).
 - `Account` **não** tem scope.
 
 ---
@@ -164,7 +165,7 @@ O PIX original **não é encerrado**: a Pagar.me não cancela PIX pendente (ver 
 Rota `web` com limiter `card-config` (30/min por IP + `Payment.id`). Devolve `{gateway, publicKey, tokenUrl, maxInstallments}` do gateway **vigente agora** (`GatewayManager::cardCheckoutConfig()`: Pagar.me, ou MP com o breaker aberto/sem chave do Pagar.me). Só responde para `Payment` `PENDING`, não expirado, com `customer` e cartão habilitado; senão `409`. Só a chave pública sai (nunca `MP_ACCESS_TOKEN`). Existe porque o formulário vive em `wire:ignore` e o `cardConfig` do render congela: sem buscar no submit, uma página aberta durante a queda continuaria tokenizando no gateway errado.
 
 ### Autenticação — `ApiTokenMiddleware` (alias `api.token`)
-Lê `Authorization`, remove `Bearer `, busca a `Config` com esse `api_token` (sem scope), pega **o primeiro `User` da conta** e faz `auth()->loginUsingId(...)`. Conta sem nenhum `User` → `401`. Isso é o que faz `UserScope`, `Payment::creating` e a regra `unique` do `CheckoutRequest` funcionarem em requisições de API.
+Lê `Authorization`, remove `Bearer `, busca a `Config` com esse `api_token` (sem scope) e define a conta no `TenantContext` — **nenhum `User` é logado** (antes pegava o primeiro `User` da conta). Token ausente/desconhecido → `401`. O `TenantContext` é o que faz `UserScope`, `Payment::creating` e a regra `unique` do `CheckoutRequest` funcionarem em requisições de API.
 
 ### Webhook de saída (para o cliente)
 `POST <notification_url>` com header `X-Webhook-Secret: <WEBHOOK_SECRET>` e corpo:
@@ -252,10 +253,10 @@ Como subir (Sail): `composer install`, criar `.env`, `php artisan key:generate`,
 
 ## 8. Pontos de atenção encontrados na leitura
 
-Observações para revisão, das mais importantes às menores. Itens 5, 6, 7, 9, 10, 12 e 16 já foram corrigidos (ver §9 para o 7); os demais seguem em aberto.
+Observações para revisão, das mais importantes às menores. Itens 1, 5, 6, 7, 9, 10, 12 e 16 já foram corrigidos (ver §9 para o 7); os demais seguem em aberto.
 
 **Segurança / integridade**
-1. **Cancelamento forjável no checkout** — [PaymentTimer](app/Livewire/PaymentTimer.php): `cancelar()` é método público e `expirationDate` é propriedade pública (adulterável no cliente Livewire). Qualquer pagador pode cancelar a própria cobrança. Pior: o pagamento cancelado localmente deixa de ser consultado pelo `ProcessPaymentController`, então um PIX pago depois **não é reconhecido**.
+1. ~~**Cancelamento forjável no checkout**~~ — **resolvido**: [PaymentTimer](app/Livewire/PaymentTimer.php) não expõe mais `cancelar()` nem `expirationDate` públicos; a expiração é relida do banco em `checkExpiration()`.
 2. ~~**`AccountResource` sem escopo**~~ — **resolvido**: `AccountResource::getEloquentQuery()` restringe à conta do usuário logado (UUID de outra conta → 404).
 3. **Painel/Telescope** — `User::canAccessPanel()` retorna sempre `true`; o gate do Telescope libera qualquer usuário autenticado; `laravel/telescope` está em `require` (produção). Telescope guarda payloads (incluindo dados de clientes e o token) em produção só se cair nos filtros, mas fica exposto a qualquer login.
 4. **`api_token` em texto puro**, comparado direto no banco; o token aparece em claro no painel.
