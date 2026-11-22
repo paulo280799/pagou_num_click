@@ -58,19 +58,25 @@ class PlatformTest extends TestCase
         $this->assertFalse($user->fresh()->is_super_admin);
     }
 
-    public function test_account_owners_still_use_the_account_panel_and_super_admins_too(): void
+    public function test_panels_are_separate_owners_use_admin_and_super_admins_use_platform(): void
     {
-        $this->actingAs(User::factory()->create(['account_id' => Account::factory()->create()->id]))->get('/admin')->assertOk();
-        $this->actingAs($this->admin)->get('/admin')->assertOk();
+        $owner = User::factory()->create(['account_id' => Account::factory()->create()->id]);
+
+        $this->actingAs($owner)->get('/admin')->assertOk();
+        $this->actingAs($owner)->get('/platform/accounts')->assertForbidden();
+
+        // super-admin que cair em /admin é levado ao painel da plataforma, que é o dele
+        $this->actingAs($this->admin)->get('/admin')->assertRedirect('/platform');
+        $this->actingAs($this->admin)->get('/admin/payments')->assertRedirect('/platform');
+        $this->actingAs($this->admin)->get('/platform/accounts')->assertOk();
     }
 
-    public function test_super_admins_get_a_shortcut_to_the_platform_panel_and_back(): void
+    public function test_telescope_link_lives_in_the_platform_menu_and_never_in_the_account_panel(): void
     {
-        $this->actingAs($this->admin)->get('/admin')->assertOk()->assertSee('Painel da plataforma')->assertSee('/platform', false);
-        $this->actingAs($this->admin)->get('/platform/accounts')->assertOk()->assertSee('Painel da conta');
+        $this->actingAs($this->admin)->get('/platform/accounts')->assertOk()->assertSee('Telescope')->assertSee('/telescope', false);
 
         $this->actingAs(User::factory()->create(['account_id' => Account::factory()->create()->id]))
-            ->get('/admin')->assertOk()->assertDontSee('Painel da plataforma');
+            ->get('/admin')->assertOk()->assertDontSee('/telescope', false);
     }
 
     public function test_creating_an_account_invites_the_owner(): void

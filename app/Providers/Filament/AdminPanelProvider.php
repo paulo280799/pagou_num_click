@@ -52,23 +52,11 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
 
-            ->userMenuItems([
-                // só super-admins: atalho para o painel da plataforma (contas, convites, suspensão)
-                'platform' => MenuItem::make()
-                    ->label('Painel da plataforma')
-                    ->url('/platform')
-                    ->icon('heroicon-m-building-office-2')
-                    ->visible(fn (): bool => (bool) auth()->user()?->is_super_admin),
-                'telescope' => MenuItem::make()
-                    ->label(fn() => 'telescope')
-                    ->visible(fn (): bool => (bool) auth()->user()?->is_super_admin)
-                    ->url(fn (): string => '/telescope')
-                    ->icon('heroicon-m-user-circle')
-            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                \App\Http\Middleware\KeepSuperAdminsOnPlatform::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
                 VerifyCsrfToken::class,

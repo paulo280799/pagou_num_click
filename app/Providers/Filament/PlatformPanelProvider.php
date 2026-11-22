@@ -34,7 +34,8 @@ class PlatformPanelProvider extends PanelProvider
             ->globalSearch(false)
             ->renderHook(PanelsRenderHook::STYLES_AFTER, fn () => view('filament.theme'))
             ->userMenuItems([
-                'account' => MenuItem::make()->label('Painel da conta')->url('/admin')->icon('heroicon-m-wallet'),
+                // o Telescope guarda requisições e exceções de todas as contas: é ferramenta de quem opera a plataforma
+                'telescope' => MenuItem::make()->label('Telescope')->url('/telescope')->icon('heroicon-m-bug-ant'),
             ])
             ->discoverResources(in: app_path('Filament/Platform/Resources'), for: 'App\\Filament\\Platform\\Resources')
             ->discoverPages(in: app_path('Filament/Platform/Pages'), for: 'App\\Filament\\Platform\\Pages')

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (34)
+- **Painéis separados: super-admin não usa o `/admin` (achado na validação manual)**: o super-admin entrava no painel de contas (`/admin`) e via uma conta vazia, o que não faz sentido para quem opera a plataforma (a conta "Plataforma" só existe porque `users.account_id` é obrigatório). Agora `User::canAccessPanel` separa os painéis (`/admin` = donos de conta, `/platform` = super-admin) e o middleware `KeepSuperAdminsOnPlatform` redireciona o super-admin de `/admin` para `/platform` (logout continua passando). Os atalhos entre painéis da entrada 33 foram removidos; o link do Telescope passou para o menu do `/platform`. Testes em `PlatformTest`; verificado por HTTP real com sessões forjadas.
+
 ## 2026-11-22 (33)
 - **Atalho entre painéis (achado na validação manual)**: o super-admin é também usuário de uma conta e entra por `/admin/login` sem perceber que o painel da plataforma é `/platform`. O menu do usuário do `/admin` ganhou "Painel da plataforma" (só super-admin) e o do `/platform` ganhou "Painel da conta". Teste em `PlatformTest`.
 
