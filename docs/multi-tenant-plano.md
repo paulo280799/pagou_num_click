@@ -39,14 +39,14 @@ Nota: `UserScope` ficou como escopo + `TenantContext`; trait `BelongsToAccount` 
 - [x] Middleware compara hash (`hash_equals`); painel mostra só prefixo; ação "gerar/rotacionar token" mostra o valor uma única vez.
 - [x] Remover coluna `api_token` em texto após janela de migração (aviso aos clientes: o token em uso continua válido).
 
-## Fase 3 — Credenciais por tenant (L1, L4) — maior fase
-- [ ] Tabela `gateway_credentials` (`account_id`, `gateway`, `payload` `encrypted:array`, `enabled`, `last_validated_at`); `APP_KEY` estável (já exigido).
-- [ ] `GatewayManager::for(Account)` injeta credenciais nos gateways (hoje leem `config()`); `PagarmeGateway`/`MercadoPagoGateway` deixam de ler env de credencial. Env global vira fallback só para a conta "dona" da plataforma (compatibilidade com produção atual, sem renomear env — hospedagem sem SSH).
-- [ ] Circuit breaker com chave por conta+gateway (`gateway:{account}:{gw}`).
-- [ ] Webhook MP de entrada: segredo e `access_token` por tenant; rota `POST /api/webhooks/mercadopago/{account}` (ou resolver pelo `data.id` e validar com o segredo do dono).
-- [ ] Chaves públicas do card-config (`pk_...`) por tenant; checkout lê as do dono do `Payment`.
-- [ ] Tela no painel para o tenant cadastrar/validar credenciais (chamada de teste ao provedor, `GET /users/me` no MP); campos secretos mascarados após salvar; aviso "sem redundância" quando só um gateway está ativo.
-- [ ] Scheduler (`process-payment`/`process-webhook`): carregar credenciais pelo `payment.account_id`; um tenant com credencial inválida não trava o laço.
+## Fase 3 — Credenciais por tenant (L1, L4) — FEITA (mesma branch). Env: `GATEWAYS_ENV_ACCOUNT_ID` indica a conta que segue no .env
+- [x] Tabela `gateway_credentials` (`account_id`, `gateway`, `payload` `encrypted:array`, `enabled`, `last_validated_at`); `APP_KEY` estável (já exigido).
+- [x] `GatewayManager::for(Account)` injeta credenciais nos gateways (hoje leem `config()`); `PagarmeGateway`/`MercadoPagoGateway` deixam de ler env de credencial. Env global vira fallback só para a conta "dona" da plataforma (compatibilidade com produção atual, sem renomear env — hospedagem sem SSH).
+- [x] Circuit breaker com chave por conta+gateway (`gateway:{account}:{gw}`).
+- [x] Webhook MP de entrada: segredo e `access_token` por tenant; rota `POST /api/webhooks/mercadopago/{account}` (ou resolver pelo `data.id` e validar com o segredo do dono).
+- [x] Chaves públicas do card-config (`pk_...`) por tenant; checkout lê as do dono do `Payment`.
+- [x] Tela no painel para o tenant cadastrar/validar credenciais (chamada de teste ao provedor, `GET /users/me` no MP); campos secretos mascarados após salvar; aviso "sem redundância" quando só um gateway está ativo.
+- [x] Scheduler (`process-payment`/`process-webhook`): carregar credenciais pelo `payment.account_id`; um tenant com credencial inválida não trava o laço.
 
 ## Fase 4 — Onboarding e papéis (L3, L6)
 - [ ] Papel `super_admin` (flag em `users`) com painel `/platform` separado: criar conta, convidar usuário, suspender, ver volume. Sem isso, nada de multi-cliente operável.
