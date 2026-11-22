@@ -131,9 +131,12 @@ class AdminPanelTest extends TestCase
 
         $form->callFormComponentAction('integration', 'regenerateToken');
 
-        $new = $config->fresh()->api_token;
-        $this->assertNotSame('token-antigo', $new);
-        $this->assertSame(30, strlen($new));
+        $fresh = $config->fresh();
+        $this->assertNull($fresh->api_token, 'o valor puro nunca volta do banco');
+        $this->assertNotSame(Config::hashToken('token-antigo'), $fresh->api_token_hash);
+        $this->assertSame(Config::hashToken('token-antigo'), $fresh->previous_api_token_hash);
+        $this->assertTrue($fresh->previous_api_token_expires_at->isFuture());
+        $this->assertNull(Config::findByToken('token-que-nao-existe'));
     }
 
     public function test_config_form_saves_installment_settings(): void

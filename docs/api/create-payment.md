@@ -25,7 +25,7 @@ Authorization: Bearer <api_token>
 Content-Type: application/json
 ```
 
-`api_token` é o da configuração da conta (painel `/admin` → Configuração). Token ausente, desconhecido ou de conta sem usuário → `401 {"error":"Unauthorized"}`. Cada conta só enxerga os próprios pagamentos.
+`api_token` é o da configuração da conta (painel `/admin` → Configurações → Integração). O token completo só aparece ao ser gerado (guarde-o); depois o painel mostra apenas o prefixo. Ao regenerar, o token anterior continua válido por uma janela curta (a conta pode revogá-lo na hora). Token ausente, desconhecido ou expirado → `401 {"error":"Unauthorized"}`. Cada conta só enxerga os próprios pagamentos.
 
 ## Corpo da requisição
 
@@ -80,6 +80,26 @@ Redirecione o pagador para essa URL. `gateway` (`pagarme` ou `mercadopago`) diz 
 ```json
 { "error": "Unauthorized" }
 ```
+
+### `429`
+
+A conta passou da cota (padrão 60 requisições por minuto, por conta, não por IP). O header `Retry-After` diz em quantos segundos tentar de novo.
+
+```json
+{ "error": "Too Many Requests" }
+```
+
+### `403`
+
+Conta suspensa pela plataforma. Checkouts já criados continuam pagáveis até expirar.
+
+```json
+{ "error": "Account suspended" }
+```
+
+### `422` — conta sem gateway
+
+A conta ainda não cadastrou credenciais de nenhum gateway (painel → Gateways): `{"success": false, "message": "Nenhum gateway de pagamento configurado para esta conta. Cadastre as credenciais no painel."}`.
 
 ### `422` — validação
 

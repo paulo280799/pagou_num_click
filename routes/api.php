@@ -26,7 +26,7 @@ Route::middleware(['api.token'])->group(function () {
 });
 
 // Notificações do Mercado Pago (Orders): a assinatura x-signature é validada no controller
-Route::post('/webhooks/mercadopago', MercadoPagoWebhookController::class)->name('webhooks.mercadopago');
+Route::post('/webhooks/mercadopago/{account?}', MercadoPagoWebhookController::class)->whereUuid('account')->name('webhooks.mercadopago');
 
 // Documentação pública da API (Swagger UI + especificação OpenAPI em docs/api/openapi.yaml)
 Route::view('/docs', 'api-docs')->name('api.docs');

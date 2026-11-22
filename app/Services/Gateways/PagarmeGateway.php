@@ -8,10 +8,12 @@ use App\Enums\StatusPaymentEnum;
 use App\Support\ChargeResult;
 use App\Support\Gateways\CardCheckoutConfig;
 use App\Support\Gateways\CardRequest;
+use App\Support\Gateways\GatewayCredentialsRejectedException;
 use App\Support\Gateways\GatewayRequestException;
 use App\Support\Gateways\GatewayUnavailableException;
 use App\Support\Gateways\NormalizedStatus;
 use App\Support\Gateways\PixCharge;
+use App\Support\Gateways\PagarmeCredentials;
 use App\Support\Gateways\PixRequest;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -21,6 +23,14 @@ use Illuminate\Support\Facades\Log;
 
 class PagarmeGateway implements PaymentGateway
 {
+    /** As credenciais são da conta (tenant) que está cobrando; null = conta sem Pagar.me configurado. */
+    public function __construct(private ?PagarmeCredentials $credentials = null) {}
+
+    public function isConfigured(): bool
+    {
+        return $this->credentials !== null;
+    }
+
     public function name(): GatewayEnum
     {
         return GatewayEnum::PAGARME;
@@ -33,7 +43,7 @@ class PagarmeGateway implements PaymentGateway
 
     private function http(?int $timeout = null): PendingRequest
     {
-        $request = Http::withBasicAuth(config('integration.user_integration'), config('integration.password_integration'));
+        $request = Http::withBasicAuth((string) $this->credentials?->user, (string) $this->credentials?->password);
 
         return $timeout === null ? $request : $request->timeout($timeout);
     }
@@ -174,6 +184,11 @@ class PagarmeGateway implements PaymentGateway
             throw new GatewayUnavailableException('Pagar.me: falha de conexão', $this->name(), null, null, $e);
         }
 
+        // credencial recusada (401/403) é configuração quebrada, não "o PIX não existe": nunca pode virar cancelamento
+        if (in_array($response->status(), [401, 403], true)) {
+            throw new GatewayCredentialsRejectedException("Pagar.me: credencial recusada (HTTP {$response->status()})", $this->name(), $response->status());
+        }
+
         if ($this->isInfraFailure($response)) {
             throw new GatewayUnavailableException("Pagar.me: HTTP {$response->status()}", $this->name(), $response->status());
         }
@@ -223,7 +238,7 @@ class PagarmeGateway implements PaymentGateway
 
     public function cardCheckoutConfig(): ?CardCheckoutConfig
     {
-        $key = config('integration.public_key');
+        $key = $this->credentials?->publicKey;
 
         return filled($key)
             ? new CardCheckoutConfig(GatewayEnum::PAGARME, $key, 'https://api.pagar.me/core/v5/tokens')

@@ -7,6 +7,7 @@ use App\Enums\PaymentMethodEnum;
 use App\Enums\StatusPaymentEnum;
 use App\Models\Scopes\UserScope;
 use App\Support\ChargeResult;
+use App\Support\TenantContext;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -67,7 +68,7 @@ class Payment extends Model
         // Intercepta antes de criar um novo item
         static::creating(function ($item) {
             if (! $item->account_id) {
-                $item->account_id = auth()->user()->account->id;
+                $item->account_id = app(TenantContext::class)->requireAccountId();
             }
         });
 

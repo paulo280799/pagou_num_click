@@ -18,6 +18,13 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
 
         $this->hideSensitiveRequestDetails();
 
+        // filtrar por cliente no Telescope: tag `account:{uuid}`
+        Telescope::tag(function (IncomingEntry $entry) {
+            $accountId = app(\App\Support\TenantContext::class)->accountId();
+
+            return $accountId ? ['account:'.$accountId] : [];
+        });
+
         Telescope::filter(function (IncomingEntry $entry){
             if ($this->app->environment('local')) {
                 return true;
@@ -54,8 +61,9 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
      */
     protected function gate(): void
     {
+        // O Telescope guarda requisições e exceções de TODAS as contas: só super-admins da plataforma
         Gate::define('viewTelescope', function ($user) {
-            return auth()->check();
+            return (bool) $user?->is_super_admin;
         });
     }
 }

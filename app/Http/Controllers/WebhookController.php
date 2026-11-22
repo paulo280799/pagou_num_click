@@ -27,6 +27,8 @@ class WebhookController extends Controller
 
     private function attemptNotification($payment)
     {
+        \App\Support\TenantContext::tagLogs($payment->account_id);
+
         if (!$payment->notification_url) {
             Log::warning("Pagamento {$payment->id} sem URL de notificação.");
             return;

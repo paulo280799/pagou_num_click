@@ -37,7 +37,7 @@ class PaymentStatusPending extends Component
         $payment = Payment::withoutGlobalScopes()->find($this->paymentId);
 
         // O cartão fica habilitado se qualquer gateway tiver chave pública. Só a chave pública vai ao browser.
-        $gatewayConfig = app(GatewayManager::class)->cardCheckoutConfig();
+        $gatewayConfig = $payment ? app(GatewayManager::class)->forPayment($payment)->cardCheckoutConfig() : null;
 
         // customer == null: pagamento legado, pay-card responde 409. Só booleanos vão ao browser.
         $cardEnabled = $payment !== null

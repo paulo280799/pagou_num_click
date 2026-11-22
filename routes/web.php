@@ -17,3 +17,9 @@ Route::post('/checkout/{id}/pay-card', [CardPaymentController::class, 'store'])
 Route::get('/', fn () => view('landing', [
     'contactUrl' => config('services.landing.contact_url') ?: '#topo',
 ]))->name('landing');
+
+// Convite do dono da conta (link assinado e de uso único): define a senha e entra no painel
+Route::middleware(['signed', 'throttle:10,1'])->group(function () {
+    Route::get('/convite/{user}', [\App\Http\Controllers\InvitationController::class, 'show'])->name('invitation.show');
+    Route::post('/convite/{user}', [\App\Http\Controllers\InvitationController::class, 'accept'])->name('invitation.accept');
+});

@@ -9,6 +9,10 @@
 return [
 
     // timeout (s) da criação de pagamento: curto de propósito, para o failover não esperar os 30 s padrão
+    // conta que ainda usa as credenciais do .env (URL/USER/PASSWORD_INTEGRATION, MP_*) por não ter cadastrado nada no painel:
+    // o id (UUID) da conta "dona" da instalação atual. `*` = todas as contas (SÓ dev/teste). Vazio = ninguém usa o .env.
+    'env_credentials_account' => env('GATEWAYS_ENV_ACCOUNT_ID'),
+
     'create_timeout' => (int) env('GATEWAY_CREATE_TIMEOUT', 5),
 
     'mercadopago' => [

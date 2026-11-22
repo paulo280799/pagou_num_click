@@ -45,6 +45,9 @@ class AdminPanelProvider extends PanelProvider
             // o painel só carrega o CSS do Filament (sem tema próprio), então ajustes de layout/tema entram inline.
             // Abas da lista de pagamentos: à esquerda (o Filament as centraliza com mx-auto) e coladas na tabela.
             ->renderHook(PanelsRenderHook::STYLES_AFTER, fn () => view('filament.theme'))
+            ->renderHook(PanelsRenderHook::PAGE_START, fn () => auth()->user()?->account?->isSuspended()
+                ? new \Illuminate\Support\HtmlString('<div style="padding:12px 16px;border-radius:10px;background:#FBEAE3;color:#C1440E;font-weight:600;margin-bottom:16px">Esta conta está suspensa: a API não aceita novas cobranças. Fale com o suporte para reativar.</div>')
+                : '')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
@@ -52,6 +55,7 @@ class AdminPanelProvider extends PanelProvider
             ->userMenuItems([
                 'telescope' => MenuItem::make()
                     ->label(fn() => 'telescope')
+                    ->visible(fn (): bool => (bool) auth()->user()?->is_super_admin)
                     ->url(fn (): string => '/telescope')
                     ->icon('heroicon-m-user-circle')
             ])

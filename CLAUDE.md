@@ -12,7 +12,7 @@ Full technical documentation (flow diagrams, data model, API contract, scheduler
 
 - Stack: PHP ^8.1, Laravel 10, Filament 3.3 (panel), Livewire 3 (checkout UI), Sanctum, Telescope, Guzzle HTTP client, Vite + Tailwind 3.
 - DB: MySQL via Laravel Sail. All IDs are UUIDs.
-- Payment providers: **Pagar.me** (primary; v5 orders/charges REST API with Basic Auth; `URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION`) and **Mercado Pago** (redundancy, Orders API `/v1/orders`; used only when Pagar.me fails, requires `MP_ACCESS_TOKEN`). Everything goes through `GatewayManager` (`app/Services/Gateways/`), never straight to a provider.
+- Payment providers: **Pagar.me** (primary; v5 orders/charges REST API with Basic Auth; `URL_INTEGRATION`, `USER_INTEGRATION`, `PASSWORD_INTEGRATION`) and **Mercado Pago** (redundancy, Orders API `/v1/orders`; used only when Pagar.me fails, requires `MP_ACCESS_TOKEN`). Everything goes through `GatewayManager` (`app/Services/Gateways/`), never straight to a provider. **Credentials are per account** (`gateway_credentials`, encrypted; registered in the panel at `/admin/gateways`): `GatewayManager::forPayment($payment)` / `forTenant()` return a `TenantGateways` bound to that account's credentials (`GatewayCredentialResolver`); never read provider credentials from `config()` inside a gateway. The migration `seed_gateway_credentials_from_env` copies the `.env` credentials into every account that exists at deploy time (so production keeps charging); after that, `.env` credentials only serve the account in `GATEWAYS_ENV_ACCOUNT_ID` as a live fallback (`*` = all accounts, dev/test only; phpunit sets it). An account with no gateway cannot create charges (422); the Mercado Pago failover exists only for accounts that configured it; the circuit breaker is per account.
 - Locale: UI in Portuguese; `timezone = America/Sao_Paulo`, `locale = en`.
 
 ## Environment
@@ -103,15 +103,15 @@ Console commands in `app/Console/Commands/` are thin — they only delegate to t
 
 ### Multi-tenancy via global scope
 
-`Payment` and `Config` apply [app/Models/Scopes/UserScope.php](app/Models/Scopes/UserScope.php), filtering by `account_id = auth()->user()->account->id`. This has two consequences to keep in mind everywhere in this codebase:
+`Payment` and `Config` apply [app/Models/Scopes/UserScope.php](app/Models/Scopes/UserScope.php), filtering by the current tenant's `account_id` (`TenantContext`: API token account, else the logged-in user's account). This has two consequences to keep in mind everywhere in this codebase:
 
 - Any code path without an authenticated user (scheduler commands, public Livewire checkout) must call `withoutGlobalScopes()` to read these models.
-- `account_id` is auto-filled on `creating` from the authenticated user (for `Payment`, only if not already set).
+- `account_id` is auto-filled on `creating` from the tenant (for `Payment`/`Config`, only if not already set).
 - `Account` itself has **no** scope — any authenticated user can access any account's admin records by UUID if they know the id (see DOCUMENTACAO.md §8 for the related known issues).
 
-### API auth bridges a tokenless request into an authenticated one
+### API auth sets the tenant (no user is logged in)
 
-`ApiTokenMiddleware` (alias `api.token`) takes the `Authorization: Bearer <api_token>` header, looks up the matching `Config` (without scope), takes the **first `User`** of that account, and does `auth()->loginUsingId(...)`. This synthetic login is what makes `UserScope`, `Payment::creating`, and the `CheckoutRequest` `unique` validation rule work for API requests — there is no per-request tenant resolution beyond this.
+`ApiTokenMiddleware` (alias `api.token`) takes the `Authorization: Bearer <api_token>` header, hashes it (SHA-256) and looks up `Config::findByToken` (without scope; matches the current token or the previous one during the rotation grace window `API_TOKEN_ROTATION_GRACE_MINUTES`) and sets the account on `App\Support\TenantContext`. `UserScope`, `Payment::creating`, `Config::creating` and the `CheckoutRequest` `unique` rule read the tenant from there (falling back to the logged-in panel user). With no tenant the scope returns nothing (fail closed). Evolution plan (per-tenant provider credentials, hashed tokens, invite-only signup): [docs/multi-tenant-plano.md](docs/multi-tenant-plano.md).
 
 ### Data model
 
@@ -131,6 +131,6 @@ Registration is disabled (the `Register` page/class that creates `Account` + `Us
 
 ## Known issues to be aware of
 
-DOCUMENTACAO.md §8 lists open issues found during a code review — notably: `PaymentTimer` Livewire component exposes a public `cancelar()` and public `expirationDate`, letting any payer cancel their own charge client-side (and a locally-canceled payment is no longer polled, so a PIX paid afterward is never recognized); `AccountResource` has no tenant scope; `api_token` is stored and displayed in plaintext; (the `Config::boot` token bug, the `duration` cast, the `ApiTokenMiddleware` 500 and the `withoutOverlapping` item are fixed). Check that section before "fixing" related behavior, since some of these may be intentional follow-up work rather than this-task scope.
+DOCUMENTACAO.md §8 lists open issues found during a code review — notably: `PaymentTimer` Livewire component exposes a public `cancelar()` and public `expirationDate`, letting any payer cancel their own charge client-side (and a locally-canceled payment is no longer polled, so a PIX paid afterward is never recognized); `AccountResource` has no tenant scope; (the `Config::boot` token bug, the `duration` cast, the `ApiTokenMiddleware` 500 and the `withoutOverlapping` item are fixed). Check that section before "fixing" related behavior, since some of these may be intentional follow-up work rather than this-task scope.
 
 `routes/web.php`'s `/checkout/{id}` throttle and the `web` middleware group's global throttle were removed (see DOCUMENTACAO.md §9) because they shared a rate-limit counter keyed by IP+domain with Livewire's polling requests, causing legitimate payers to get HTTP 429. `TrustProxies` is configured with Cloudflare's IP ranges specifically (not `*`) so `$request->ip()` resolves correctly behind Cloudflare without allowing IP spoofing via `X-Forwarded-For`.

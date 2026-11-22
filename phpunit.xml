@@ -25,6 +25,8 @@
         <env name="DB_DATABASE" value="testing"/>
         <env name="MAIL_MAILER" value="array"/>
         <!-- credenciais do Mercado Pago do .env local não podem vazar para a suíte: o failover nasce desligado e os testes ligam com config() -->
+        <!-- as contas de teste usam as credenciais do .env/config() (nas contas reais cada tenant cadastra as suas) -->
+        <env name="GATEWAYS_ENV_ACCOUNT_ID" value="*"/>
         <env name="MP_ACCESS_TOKEN" value=""/>
         <env name="MP_PUBLIC_KEY" value=""/>
         <env name="PULSE_ENABLED" value="false"/>

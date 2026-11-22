@@ -43,17 +43,20 @@ class User extends Authenticatable implements FilamentUser
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'invitation_pending' => 'boolean',
+        'is_super_admin' => 'boolean',
         'password' => 'hashed',
     ];
 
     public function canAccessPanel(Panel $panel): bool
     {
-        // if(auth()->check()){
-             return true;
-        // }
-        // return false;
-        //return auth()->check();
+        // o painel da plataforma é só dos super-admins; o painel das contas (/admin) segue aberto a qualquer usuário
+        return $panel->getId() === 'platform' ? (bool) $this->is_super_admin : true;
+    }
 
+    public function isSuperAdmin(): bool
+    {
+        return (bool) $this->is_super_admin;
     }
 
     public function account()

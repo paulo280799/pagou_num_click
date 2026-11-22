@@ -122,13 +122,29 @@ paths:
                 payment_link: https://seu-dominio.com/checkout/0b5b0b42-5ab2-4e4c-9f0e-3d1a8f6a1c11
                 gateway: pagarme
         '401':
-          description: Token ausente ou inválido, ou conta sem usuário.
+          description: Token ausente, inválido ou expirado.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnauthorizedError'
               example:
                 error: Unauthorized
+        '429':
+          description: Cota da conta excedida (padrão 60 requisições por minuto por conta). Espere `Retry-After` segundos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                error: Too Many Requests
+        '403':
+          description: Conta suspensa pela plataforma. Checkouts já criados continuam pagáveis até expirar; novas cobranças só voltam com a reativação da conta.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                error: Account suspended
         '422':
           description: |
             Duas formas possíveis:
@@ -218,8 +234,8 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: '`api_token` da configuração da conta (painel `/admin`). Enviar
-        `Authorization: Bearer <api_token>`.'
+      description: '`api_token` da configuração da conta (painel `/admin`, mostrado só ao gerar).
+        Enviar `Authorization: Bearer <api_token>`.'
   schemas:
     CreatePaymentRequest:
       type: object

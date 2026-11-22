@@ -7,6 +7,7 @@ use App\Enums\PaymentMethodEnum;
 use App\Enums\StatusPaymentEnum;
 use App\Models\Account;
 use App\Models\Payment;
+use App\Services\Gateways\CircuitBreaker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
@@ -29,14 +30,22 @@ class CardGatewayTest extends TestCase
         $this->enableMercadoPago();
     }
 
+    private ?Account $account = null;
+
+    /** Uma conta por teste: o breaker é por conta (a falha de um tenant não abre o circuito de outro). */
+    private function account(): Account
+    {
+        return $this->account ??= Account::factory()->create();
+    }
+
     private function payment(string $state = 'withCustomer', array $attrs = []): Payment
     {
-        return Payment::factory()->{$state}()->create($attrs + ['account_id' => Account::factory()->create()->id, 'amount' => 10.5]);
+        return Payment::factory()->{$state}()->create($attrs + ['account_id' => $this->account()->id, 'amount' => 10.5]);
     }
 
     private function openPagarmeBreaker(): void
     {
-        Cache::put('gateways:circuit:PAGARME:opened_at', now()->timestamp);
+        Cache::put(CircuitBreaker::key($this->account()->id, GatewayEnum::PAGARME, 'opened_at'), now()->timestamp);
     }
 
     private function pagarmePayload(array $o = []): array
@@ -540,7 +549,7 @@ Injected: 1"]))->assertStatus(422)->assertJsonValidationErrors('device_id');
         ]);
 
         $this->pay($p, $this->pagarmePayload())->assertStatus(503);
-        $this->assertFalse(app(\App\Services\Gateways\CircuitBreaker::class)->isOpen(GatewayEnum::PAGARME));
-        $this->assertTrue(app(\App\Services\Gateways\CircuitBreaker::class)->isDegraded(GatewayEnum::PAGARME));
+        $this->assertFalse(app(CircuitBreaker::class)->isOpen($this->account()->id, GatewayEnum::PAGARME));
+        $this->assertTrue(app(CircuitBreaker::class)->isDegraded($this->account()->id, GatewayEnum::PAGARME));
     }
 }

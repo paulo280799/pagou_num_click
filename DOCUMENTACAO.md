@@ -74,6 +74,8 @@ accounts 1───N configs      (na prática 1:1, ver Filament)
 accounts 1───N payments
 ```
 
+**gateway_credentials** — credenciais dos provedores **por conta**: `id (uuid)`, `account_id`, `gateway` (`PAGARME`/`MERCADOPAGO`), `credentials` (`encrypted:array` com `APP_KEY`: Pagar.me `user`/`password`/`public_key`; Mercado Pago `access_token`/`public_key`/`webhook_secret`; oculto na serialização), `enabled`, `last_validated_at`, `last_validation_error`; único por (`account_id`, `gateway`); `UserScope`. Resolvidas por `GatewayCredentialResolver` (linha ativa → senão `.env` só para a conta de `GATEWAYS_ENV_ACCOUNT_ID` → senão o gateway não existe para a conta).
+
 **accounts** — `id (uuid)`, `name`, `legal_name`, `document` (CPF/CNPJ, só dígitos), `contact_email`, `phone` (só dígitos); os quatro últimos são opcionais.
 **users** — tabela padrão do Laravel + `account_id` (uuid, FK cascade).
 **configs** — `id`, `duration` (segundos de validade do PIX; coluna string, com cast inteiro no model), `notification_url`, `redirect_url`, `card_installments_enabled` (bool, padrão `true`), `pix_fee_percent` e `card_fee_percent_1x`/`_2_6x`/`_7_12x` (tarifas do Pagar.me, ver §6), `mp_pix_fee_percent` e `mp_card_fee_percent_1x`/`_2_6x`/`_7_12x` (tarifas do Mercado Pago, nullable = não configurada), `card_max_installments` (1–12, padrão 12; ambos editáveis no painel, seção "Cartão de crédito"), `api_token`, `account_id`.
@@ -90,9 +92,10 @@ accounts 1───N payments
 - `TypeTransactionEnum`: `INFLOW`/`OUTFLOW` — **não utilizado** no código.
 
 ### Multi-tenancy
-`Payment` e `Config` usam o global scope [UserScope](app/Models/Scopes/UserScope.php): `where account_id = auth()->user()->account->id`. Consequências:
-- Em contexto sem usuário logado (comandos do scheduler, Livewire público) é preciso usar `withoutGlobalScopes()` — e o código faz isso.
-- `creating` de `Payment`/`Config` preenche `account_id` a partir do usuário autenticado (em `Payment`, só se ainda não vier preenchido).
+`Payment` e `Config` usam o global scope [UserScope](app/Models/Scopes/UserScope.php), que filtra por `account_id` do tenant atual, resolvido por [TenantContext](app/Support/TenantContext.php) (`scoped` no container): conta definida explicitamente (API, pelo token) ou, na falta dela, a do usuário logado (painel). Consequências:
+- **Sem tenant o scope falha fechado** (`1 = 0`, nada é devolvido; antes dava 500). Comandos do scheduler e o checkout público continuam usando `withoutGlobalScopes()` — e o código faz isso.
+- `creating` de `Payment`/`Config` preenche `account_id` com o tenant atual (só se ainda não vier preenchido); sem tenant lança `LogicException`.
+- Plano de evolução (credenciais por tenant, token com hash, convite): [docs/multi-tenant-plano.md](docs/multi-tenant-plano.md).
 - `Account` **não** tem scope.
 
 ---
@@ -163,8 +166,14 @@ O PIX original **não é encerrado**: a Pagar.me não cancela PIX pendente (ver 
 ### `GET /checkout/{id}/card-config` (pública, usada pelo `card-form.js` no submit)
 Rota `web` com limiter `card-config` (30/min por IP + `Payment.id`). Devolve `{gateway, publicKey, tokenUrl, maxInstallments}` do gateway **vigente agora** (`GatewayManager::cardCheckoutConfig()`: Pagar.me, ou MP com o breaker aberto/sem chave do Pagar.me). Só responde para `Payment` `PENDING`, não expirado, com `customer` e cartão habilitado; senão `409`. Só a chave pública sai (nunca `MP_ACCESS_TOKEN`). Existe porque o formulário vive em `wire:ignore` e o `cardConfig` do render congela: sem buscar no submit, uma página aberta durante a queda continuaria tokenizando no gateway errado.
 
+### Expiração nunca cancela às cegas
+Ao vencer, o polling pergunta ao provedor antes de cancelar. Credencial recusada (401/403, `GatewayCredentialsRejectedException`) ou resposta indecifrável (ex.: 404) **não cancelam**: o pagamento fica `PENDING` (log `error` no máximo 1 vez/hora) até a conta corrigir a credencial e o provedor dizer o que houve. Só indisponibilidade comum (rede/5xx) usa a janela de graça `GATEWAY_EXPIRY_GRACE_MINUTES`.
+
+### Webhook de entrada do Mercado Pago — `POST /api/webhooks/mercadopago/{account?}`
+Cada conta cadastra no painel do próprio MP a URL com o seu id (mostrada na página *Gateways*) e o segredo no sistema. A assinatura `x-signature` é validada com o segredo **da conta da URL** e só pagamentos dela são reavaliados. `{account}` precisa ser UUID (rota 404 para o resto, inclusive `*`). A URL antiga, sem `{account}`, vale para a conta de `GATEWAYS_ENV_ACCOUNT_ID` e, sem ela, para a conta **dona do pedido** (assinatura validada com o segredo dessa conta; pedido desconhecido = 401).
+
 ### Autenticação — `ApiTokenMiddleware` (alias `api.token`)
-Lê `Authorization`, remove `Bearer `, busca a `Config` com esse `api_token` (sem scope), pega **o primeiro `User` da conta** e faz `auth()->loginUsingId(...)`. Conta sem nenhum `User` → `401`. Isso é o que faz `UserScope`, `Payment::creating` e a regra `unique` do `CheckoutRequest` funcionarem em requisições de API.
+Lê `Authorization`, remove `Bearer `, calcula o SHA-256 e busca a `Config` por `api_token_hash` (ou pelo token anterior, enquanto a janela de rotação não expirou; `Config::findByToken`, sem scope) e define a conta no `TenantContext` — **nenhum `User` é logado** (antes pegava o primeiro `User` da conta). Token ausente/desconhecido → `401`. O `TenantContext` é o que faz `UserScope`, `Payment::creating` e a regra `unique` do `CheckoutRequest` funcionarem em requisições de API.
 
 ### Webhook de saída (para o cliente)
 `POST <notification_url>` com header `X-Webhook-Secret: <WEBHOOK_SECRET>` e corpo:
@@ -220,7 +229,9 @@ Configurado em [AdminPanelProvider](app/Providers/Filament/AdminPanelProvider.ph
 
 - **Dashboard** ([app/Filament/Pages/Dashboard.php](app/Filament/Pages/Dashboard.php)): página inicial do painel (`/admin`, primeiro item do menu). Filtro de período no topo (`DashboardPeriodEnum`: Hoje, Últimos 7/30 dias, Este mês, Este ano; padrão Hoje, persistido na sessão) lido pelos widgets via `InteractsWithPageFilters`. Todas as métricas usam `created_at` (coorte de cobranças criadas no período) e o escopo da conta: `DashboardStats` (cobranças criadas = soma de todos os status, autorizadas = soma dos pagos com a receita líquida na descrição — `Payment::netRevenue()`: valor – `fee_amount` de cada pagamento; sem snapshot, Pix legado usa 0,75 % e cartão não tem tarifa —, número de cobranças, ticket médio = pago ÷ nº de pagos), `DashboardChart` (linha; TPV = volume pago, ou nº de cobranças, via dropdown do gráfico; agrupa por hora no "Hoje", por dia nos demais e por mês no ano; usa `DATE_FORMAT`, ou seja, MySQL) e `DashboardStatusStats` (valor, quantidade e % por status: Pago, Pendente, Cancelado, Falha). O botão "Baixar relatório" (ao lado do filtro) chama `Dashboard::downloadReport()` → `PaymentsReport`, que faz streaming de um CSV dos pagamentos do período (sem dados do cliente); a última coluna é o gateway.
 - **PaymentResource** (Pagamentos): lista somente-leitura com polling de 5 s. Colunas: referência (busca por referência/ID; ID curto na descrição), meio (Pix / "Cartão · 3x" / "Pix ou cartão"), gateway (badge do accessor `gateway`), valor, status (badge) e criado em. Abas por status com contagem (Todos / Aguardando / Pagos / Cancelados — cancelados inclui falhos), filtros (meio, gateway — `Payment::settledOn()`, mesma regra do accessor —, período, faixa de valor) e ação "Copiar link" (checkout) nos pendentes. A visualização (modal "Pagamento {ref}") tem cabeçalho (status, valor, referência, id) e seções Pagamento (meio, bandeira/final e parcelamento do cartão pago, criado/expira/pago em), Valores (venda, taxa, tarifa de processamento, total líquido), Cliente (nome, e-mail e documento **mascarado**; o `customer` continua criptografado, por isso não é pesquisável) e Dados técnicos (recolhida: gateway do Pix e do cartão, status e detalhe crus no provedor, IDs do provedor, TID, NSU, autorização). Os itens da venda não são guardados no `Payment`, então não aparecem.
-- **AccountResource** ("Minha conta"): dados cadastrais, gestão de usuários da conta (`UsersRelationManager`: criar/editar/remover; não remove a si mesmo nem o último usuário), widget de atividade do mês (cobranças, pagas/volume, conversão) e ação "Alterar minha senha" no cabeçalho. O `api_token` é regenerado em **Configurações → Integração** (botão "Regenerar token"; invalida o anterior na hora). Padrão "singleton": `/create` redireciona para `edit` se a conta já existe. `getEloquentQuery()` filtra pela conta do usuário logado.
+- **Painel da plataforma** (`/platform`, [PlatformPanelProvider](app/Providers/Filament/PlatformPanelProvider.php)): só `users.is_super_admin` entra (`User::canAccessPanel`). A flag **não é mass-assignable**: nasce só por `php artisan platform:make-admin {email}` (promove ou cria o usuário na conta "Plataforma"; ou o equivalente via tinker com `forceFill`). Lista todas as contas (situação Ativa / Convite pendente / Suspensa, cobranças, volume pago; números por subconsulta porque `Payment` tem escopo de tenant). **Nova conta**: nome da empresa + nome/e-mail do responsável → cria `Account` e o `User` (senha aleatória inutilizável, `invitation_pending = true`; a flag, fora do `$fillable`, é o que marca o convidado — colegas criados com senha nunca ficam "pendentes") e envia `AccountInvitation` por e-mail; se o envio falhar, mostra o link para repasse manual. Convite = URL assinada que expira em 7 dias (`/convite/{user}`), de **uso único** (vale enquanto `invitation_pending` for true; depois 410), define a senha, loga e leva a `/admin`; "Reenviar convite" disponível enquanto pendente. **Suspender/Reativar** (`accounts.suspended_at`; não dá para suspender a própria conta): a API responde `403 {"error":"Account suspended"}` em `create-payment`; checkouts já criados seguem pagáveis e o scheduler segue rodando; o painel da conta mostra um aviso. O e-mail depende de `MAIL_*` configurado.
+- **Página Gateways** (`/admin/gateways`, [GatewayCredentialsPage](app/Filament/Pages/GatewayCredentialsPage.php)): cada conta cadastra as credenciais do Pagar.me e do Mercado Pago. Segredos nunca voltam para a tela (só `••••` + 4 últimos; em branco = manter); salvar valida com uma chamada de leitura (`CredentialTester`) e guarda o resultado; mostra ambiente (teste/produção), a URL do webhook do MP **da conta** e o aviso "sem redundância" quando só há um gateway. A credencial é validada **antes** de gravar: uma nova que falha não substitui a que funciona (mantém a anterior); gateway novo com credencial ruim fica salvo **desativado**. Desativar um gateway é bloqueado enquanto há PIX pendente (inclusive vencido), cartão em tentativa ou PIX vigiado de cartão pago. Sem nenhum gateway, `create-payment` responde `422`; só Mercado Pago = MP é o primário; sem MP e Pagar.me fora = 503 (sem Payment). O breaker é por conta+gateway (`gateways:circuit:{account}:{gateway}:*`).
+- **AccountResource** ("Minha conta"): dados cadastrais, gestão de usuários da conta (`UsersRelationManager`: criar/editar/remover; não remove a si mesmo nem o último usuário), widget de atividade do mês (cobranças, pagas/volume, conversão) e ação "Alterar minha senha" no cabeçalho. O `api_token` é regenerado em **Configurações → Integração** (botão "Regenerar token": o valor novo aparece uma única vez; o anterior segue válido por `API_TOKEN_ROTATION_GRACE_MINUTES` (60), ou é revogado na hora marcando a opção). Padrão "singleton": `/create` redireciona para `edit` se a conta já existe. `getEloquentQuery()` filtra pela conta do usuário logado.
 - **ConfigResource**: edição de `duration`, `notification_url`, `redirect_url`, parcelamento do cartão (toggle + parcelas máximas 1–12) e tarifas por meio (`pix_fee_percent`, padrão 0,75; cartão por faixa de parcelas `card_fee_percent_1x` / `_2_6x` / `_7_12x`, em branco = "não configurada"). Tarifas **por gateway**: a seção "Tarifas — Mercado Pago" (`mp_*`, só aparece com MP ativo) vale para vendas processadas pelo MP; `Payment::feeAttributesFor($method, $installments, ?GatewayEnum $gateway)` escolhe a tabela pelo gateway gravado (`pix_gateway`/`card_gateway`; sem registro, Pagar.me) e grava o snapshot na confirmação. Tarifa do MP sem configurar grava `NULL` (spike S12 pendente); exibe o `api_token` em campo desabilitado. Mesmo padrão singleton (cria a `Config` se não existir; o token é gerado no evento `creating`).
 
 ---
@@ -231,18 +242,21 @@ Não há `.env.example` no repositório. Variáveis específicas do projeto, al�
 
 | Variável | Uso |
 |---|---|
-| `URL_INTEGRATION` | Base URL do Pagar.me (`{url}/v5/orders`) |
+| `GATEWAYS_ENV_ACCOUNT_ID` | **Multi-tenant, opcional**: UUID de uma conta que usa as credenciais do `.env` (abaixo) como *fallback* ao vivo, sem linha em *Gateways*. No deploy a migration `seed_gateway_credentials_from_env` já copia o `.env` (criptografado) para cada conta existente, então a produção atual segue cobrando sem definir nada; contas criadas depois só cobram com o que cadastrarem. `*` vale para todas as contas e é **só para dev/teste** |
+| `URL_INTEGRATION` | Base URL do Pagar.me (`{url}/v5/orders`); global. As credenciais abaixo valem só para a conta de `GATEWAYS_ENV_ACCOUNT_ID` |
 | `USER_INTEGRATION` / `PASSWORD_INTEGRATION` | Basic Auth do Pagar.me |
 | `WEBHOOK_SECRET` | Enviado em `X-Webhook-Secret` nos webhooks de saída |
 | `STONE_PUBLIC_KEY_INTEGRATION` | Public key (`pk_...`) exposta ao browser para tokenizar o cartão. Precisa ser do **mesmo ambiente** (teste/produção) de `USER_INTEGRATION`. Sem ela a aba de cartão não aparece |
 | `CARD_STATEMENT_DESCRIPTOR` | Texto na fatura, até 13 caracteres (padrão `PAGOUNUMCLICK`) |
 | `CARD_HTTP_TIMEOUT` | Timeout (s) das chamadas ao provedor no fluxo de cartão e no polling (padrão 15) |
-| `MP_ACCESS_TOKEN` | Access Token do Mercado Pago (backend; **nunca** vai ao browser). **Sem ele o failover fica desligado** e o sistema se comporta só com o Pagar.me |
+| `MP_ACCESS_TOKEN` | Access Token do Mercado Pago (backend; **nunca** vai ao browser). **Sem ele o failover fica desligado** e o sistema se comporta só com o Pagar.me. Vale só para a conta de `GATEWAYS_ENV_ACCOUNT_ID`; as outras cadastram o delas no painel |
 | `MP_PUBLIC_KEY` | Public key do Mercado Pago, exposta ao browser para tokenizar o cartão no fallback. Precisa ser do mesmo ambiente do `MP_ACCESS_TOKEN` (teste e produção misturados dão erro `2034`). Sem ela o MP faz só PIX |
 | `MP_ENABLED` | `false` desliga o failover mesmo com credenciais (padrão `true`) |
 | `MP_URL` / `MP_HTTP_TIMEOUT` | Base URL (padrão `https://api.mercadopago.com`) e timeout (s) das consultas/cobrança de cartão no MP (padrão 15) |
 | `GATEWAY_CREATE_TIMEOUT` | Timeout (s) da criação de PIX, curto de propósito para o failover não esperar 30 s (padrão 5). Não reaproveita `CARD_HTTP_TIMEOUT` |
 | `GATEWAY_CIRCUIT_FAILURES` / `_WINDOW` / `_COOLDOWN` | Circuit breaker do Pagar.me: falhas (3), janela em s (60) e tempo aberto em s (120) |
+| `API_ACCOUNT_RATE_LIMIT` / `API_IP_RATE_LIMIT` | Cota da API por conta (60/min) e teto por IP contra inundação (300/min) |
+| `API_TOKEN_ROTATION_GRACE_MINUTES` | Quanto tempo o token anterior da API segue válido após "Regenerar token" (padrão 60) |
 | `GATEWAY_EXPIRY_GRACE_MINUTES` | Janela de graça para cancelar por expiração quando o gateway não responde (padrão 15) |
 | `APP_URL` | Base do `payment_link` retornado e do link copiado no painel |
 
@@ -252,13 +266,13 @@ Como subir (Sail): `composer install`, criar `.env`, `php artisan key:generate`,
 
 ## 8. Pontos de atenção encontrados na leitura
 
-Observações para revisão, das mais importantes às menores. Itens 5, 6, 7, 9, 10, 12 e 16 já foram corrigidos (ver §9 para o 7); os demais seguem em aberto.
+Observações para revisão, das mais importantes às menores. Itens 1, 5, 6, 7, 9, 10, 12 e 16 já foram corrigidos (ver §9 para o 7); os demais seguem em aberto.
 
 **Segurança / integridade**
-1. **Cancelamento forjável no checkout** — [PaymentTimer](app/Livewire/PaymentTimer.php): `cancelar()` é método público e `expirationDate` é propriedade pública (adulterável no cliente Livewire). Qualquer pagador pode cancelar a própria cobrança. Pior: o pagamento cancelado localmente deixa de ser consultado pelo `ProcessPaymentController`, então um PIX pago depois **não é reconhecido**.
+1. ~~**Cancelamento forjável no checkout**~~ — **resolvido**: [PaymentTimer](app/Livewire/PaymentTimer.php) não expõe mais `cancelar()` nem `expirationDate` públicos; a expiração é relida do banco em `checkExpiration()`.
 2. ~~**`AccountResource` sem escopo**~~ — **resolvido**: `AccountResource::getEloquentQuery()` restringe à conta do usuário logado (UUID de outra conta → 404).
-3. **Painel/Telescope** — `User::canAccessPanel()` retorna sempre `true`; o gate do Telescope libera qualquer usuário autenticado; `laravel/telescope` está em `require` (produção). Telescope guarda payloads (incluindo dados de clientes e o token) em produção só se cair nos filtros, mas fica exposto a qualquer login.
-4. **`api_token` em texto puro**, comparado direto no banco; o token aparece em claro no painel.
+3. ~~**Painel/Telescope**~~ — **resolvido**: o gate do Telescope (`viewTelescope`) agora é só de super-admin (`is_super_admin`) e o item "telescope" do menu só aparece para eles (antes qualquer login via dados de **todas** as contas). `canAccessPanel()` do `/admin` segue aberto a qualquer usuário (cada um vê só a própria conta); o do `/platform` exige super-admin. Entradas do Telescope levam a tag `account:{uuid}`.
+4. ~~**`api_token` em texto puro**~~ — **resolvido**: o banco guarda só o SHA-256 (`api_token_hash`), o prefixo (`api_token_prefix`) e, na rotação, o hash anterior com prazo (`previous_api_token_*`); o valor puro aparece uma única vez ao gerar (`pnc_` + 40 caracteres). Tokens antigos foram migrados pelo hash e continuam válidos.
 5. ~~**Bug no `Config::boot`** — usa `$model->api_token` (variável inexistente; deveria ser `$item`), então o `empty()` é sempre verdadeiro e sobrescreve qualquer token fornecido.~~ — **corrigido** (`$item->api_token`); o guard agora funciona e só gera token novo quando não há um já definido no model.
 6. ~~`ApiTokenMiddleware` quebra (erro 500) se a conta do token não tiver nenhum `User`~~ — **corrigido** (responde 401); a API ainda atua sempre como "primeiro usuário da conta".
 7. ~~Rate limit `throttle` em `/checkout` e no grupo `web` bloqueando clientes legítimos com HTTP 429~~ — **corrigido**, ver §9.
@@ -300,7 +314,8 @@ Observações para revisão, das mais importantes às menores. Itens 5, 6, 7, 9,
 **Ressalvas**
 - `/checkout/{id}` e `/livewire/update` ficam sem limite por IP; o risco é baixo (id é UUID). Se for preciso proteção, aplicar na Cloudflare (regras de rate limiting).
 - Sugestão futura: remover o `wire:poll.1s` do timer (fazer a contagem em JavaScript) e parar o polling quando o status deixar de ser `PENDING`.
-- O limiter `api` continua por IP; para lojistas com alto volume ou IP de saída compartilhado, considerar chave por `api_token`.
+- **Limites da API por conta** (`config/tenancy.php`): `API_ACCOUNT_RATE_LIMIT` (padrão 60/min) é contado por conta dentro do `ApiTokenMiddleware` (excedeu → `429 {"error":"Too Many Requests"}` com `Retry-After`); o limiter `api` por IP virou só proteção contra inundação, com teto alto (`API_IP_RATE_LIMIT`, padrão 300/min, era 60). Lojistas com IP de saída compartilhado deixam de dividir cota.
+- **Logs por conta**: todo log de requisição de API, scheduler, webhook e `pay-card` leva `account_id` no contexto (`TenantContext::tagLogs`); no Telescope, a tag `account:{uuid}`. O painel `/platform` mostra o último uso da API por conta.
 
 ---
 
