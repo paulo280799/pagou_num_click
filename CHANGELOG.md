@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (21)
+- **Identidade visual unificada** (landing = fonte da verdade): painel admin deixa o Amber/cinza frio/Inter e passa ao verde `#00B389` + neutros quentes + Instrument Sans, títulos e números em Bricolage Grotesque, marca (quadrado verde) no topo. Paleta única em `config/brand.php` (`primary`/`gray`) usada por `AdminPanelProvider`; ajustes de tema em `resources/views/filament/theme.blade.php`, logo em `filament/brand.blade.php`. Checkout (`layouts/app`) troca a fonte de sistema por Instrument Sans/Bricolage; gráfico do dashboard passa de `#22c55e` para o verde da marca. Teste `AdminPanelTest` ajustado ao novo CSS das abas.
+
 ## 2026-11-22 (20)
 - **Qualidade MP — recomendações**: medição com ordem de cartão paga pelo navegador com webhook ativo: **91/100, 0 de 7 obrigatórios pendentes** (antes 33 → 83 → 91). `items.category_id` agora vai em toda ordem (`MP_ITEM_CATEGORY`, padrão `others`; ids válidos em `GET /item_categories`).
 - **Recomendações não aplicáveis**: `additional_info.payer.registration_date` não existe na Orders API (testado: `additional_info.payer`, `payer.registration_date`/`created_date`/`date_created` e `integration_data` são rejeitados com 400), campo só da Payments API. SDK do backend (`mercadopago/dx-php` v3, única com Orders) exige PHP >= 8.2 e o projeto é PHP 8.1 (a v2 não tem Orders): fora de alcance sem subir o PHP; a integração segue por `Http` do Laravel, que permite `Http::fake` nos testes.

@@ -60,9 +60,9 @@ class DashboardChart extends ChartWidget
                 'data' => $data,
                 'fill' => true,
                 'tension' => 0.4,
-                'borderColor' => '#22c55e',
-                'backgroundColor' => 'rgba(34, 197, 94, 0.15)',
-                'pointBackgroundColor' => '#22c55e',
+                'borderColor' => '#00B389',
+                'backgroundColor' => 'rgba(0, 179, 137, 0.15)',
+                'pointBackgroundColor' => '#00B389',
             ]],
             'labels' => array_values($buckets),
         ];
