@@ -24,10 +24,10 @@ class ApiTokenMiddleware
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
-        $token = str_replace('Bearer ', '', $token);
+        $token = trim(str_replace('Bearer ', '', $token));
 
-        // Verificar se o token pertence a um usuário autenticado
-        $config = Config::withoutGlobalScopes()->where('api_token', $token)->first();
+        // só o hash do token existe no banco; ver Config::findByToken (aceita o token anterior durante a rotação)
+        $config = $token === '' ? null : Config::findByToken($token);
 
         if (! $config) {
             return response()->json(['error' => 'Unauthorized'], 401);
@@ -35,6 +35,11 @@ class ApiTokenMiddleware
 
         // O token identifica a conta (tenant); nenhum usuário é logado. UserScope e os creating() leem daqui.
         app(TenantContext::class)->set($config->account_id);
+
+        // marca o uso no máximo a cada 5 min (sem eventos/updated_at) para não gravar a cada requisição
+        if (! $config->api_token_last_used_at || $config->api_token_last_used_at->lt(now()->subMinutes(5))) {
+            Config::withoutGlobalScopes()->whereKey($config->id)->toBase()->update(['api_token_last_used_at' => now()]);
+        }
 
         return $next($request);
     }

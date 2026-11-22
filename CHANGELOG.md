@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (23)
+- **Multi-tenancy, fase 2 (token da API com hash)**: `configs.api_token` (texto puro) foi removida; ficam `api_token_hash` (SHA-256, único), `api_token_prefix`, `api_token_last_used_at` e `previous_api_token_hash`/`_expires_at`. Migration `hash_api_tokens_on_configs_table` faz o backfill do hash dos tokens atuais, que **continuam válidos**; o `down()` não recupera os valores. `Config::api_token` agora é só-escrita (grava hash+prefixo; a leitura devolve o valor puro apenas na instância que o gerou). Tokens novos: `pnc_` + 40 caracteres. `Config::rotateToken()` mantém o anterior por `API_TOKEN_ROTATION_GRACE_MINUTES` (60) ou revoga na hora; `Config::findByToken()` aceita o atual ou o anterior dentro da janela. Painel: mostra prefixo mascarado e último uso, "Regenerar token" tem a opção "Revogar o token atual imediatamente" e exibe o token novo uma única vez (notificação persistente; também na criação da `Config`). `ApiTokenMiddleware` compara por hash e registra o último uso (no máximo a cada 5 min). Testes: `ApiTokenHashTest`.
+
 ## 2026-11-22 (22)
 - **Multi-tenancy, fase 1 (isolamento)**: novo `App\Support\TenantContext` (conta explícita pela API, senão a do usuário logado). `UserScope` passa a usar o contexto e **falha fechado** sem tenant (antes `auth()->user()->account->id` dava 500). `ApiTokenMiddleware` define a conta pelo token e **não loga mais o "primeiro usuário"** (conta sem usuário agora também autentica). `Payment`/`Config::creating` e a regra `unique` do `CheckoutRequest` leem o tenant do contexto. Novos testes `Tenancy/TenantIsolationTest` (duas contas: scope, falha fechada, API, painel por id). Plano completo em `docs/multi-tenant-plano.md`. Sem mudança no contrato da API.
 

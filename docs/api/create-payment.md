@@ -25,7 +25,7 @@ Authorization: Bearer <api_token>
 Content-Type: application/json
 ```
 
-`api_token` é o da configuração da conta (painel `/admin` → Configuração). Token ausente, desconhecido ou de conta sem usuário → `401 {"error":"Unauthorized"}`. Cada conta só enxerga os próprios pagamentos.
+`api_token` é o da configuração da conta (painel `/admin` → Configurações → Integração). O token completo só aparece ao ser gerado (guarde-o); depois o painel mostra apenas o prefixo. Ao regenerar, o token anterior continua válido por uma janela curta (a conta pode revogá-lo na hora). Token ausente, desconhecido ou expirado → `401 {"error":"Unauthorized"}`. Cada conta só enxerga os próprios pagamentos.
 
 ## Corpo da requisição
 

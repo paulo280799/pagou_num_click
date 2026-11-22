@@ -111,7 +111,7 @@ Console commands in `app/Console/Commands/` are thin — they only delegate to t
 
 ### API auth sets the tenant (no user is logged in)
 
-`ApiTokenMiddleware` (alias `api.token`) takes the `Authorization: Bearer <api_token>` header, looks up the matching `Config` (without scope) and sets the account on `App\Support\TenantContext`. `UserScope`, `Payment::creating`, `Config::creating` and the `CheckoutRequest` `unique` rule read the tenant from there (falling back to the logged-in panel user). With no tenant the scope returns nothing (fail closed). Evolution plan (per-tenant provider credentials, hashed tokens, invite-only signup): [docs/multi-tenant-plano.md](docs/multi-tenant-plano.md).
+`ApiTokenMiddleware` (alias `api.token`) takes the `Authorization: Bearer <api_token>` header, hashes it (SHA-256) and looks up `Config::findByToken` (without scope; matches the current token or the previous one during the rotation grace window `API_TOKEN_ROTATION_GRACE_MINUTES`) and sets the account on `App\Support\TenantContext`. `UserScope`, `Payment::creating`, `Config::creating` and the `CheckoutRequest` `unique` rule read the tenant from there (falling back to the logged-in panel user). With no tenant the scope returns nothing (fail closed). Evolution plan (per-tenant provider credentials, hashed tokens, invite-only signup): [docs/multi-tenant-plano.md](docs/multi-tenant-plano.md).
 
 ### Data model
 
@@ -131,6 +131,6 @@ Registration is disabled (the `Register` page/class that creates `Account` + `Us
 
 ## Known issues to be aware of
 
-DOCUMENTACAO.md §8 lists open issues found during a code review — notably: `PaymentTimer` Livewire component exposes a public `cancelar()` and public `expirationDate`, letting any payer cancel their own charge client-side (and a locally-canceled payment is no longer polled, so a PIX paid afterward is never recognized); `AccountResource` has no tenant scope; `api_token` is stored and displayed in plaintext; (the `Config::boot` token bug, the `duration` cast, the `ApiTokenMiddleware` 500 and the `withoutOverlapping` item are fixed). Check that section before "fixing" related behavior, since some of these may be intentional follow-up work rather than this-task scope.
+DOCUMENTACAO.md §8 lists open issues found during a code review — notably: `PaymentTimer` Livewire component exposes a public `cancelar()` and public `expirationDate`, letting any payer cancel their own charge client-side (and a locally-canceled payment is no longer polled, so a PIX paid afterward is never recognized); `AccountResource` has no tenant scope; (the `Config::boot` token bug, the `duration` cast, the `ApiTokenMiddleware` 500 and the `withoutOverlapping` item are fixed). Check that section before "fixing" related behavior, since some of these may be intentional follow-up work rather than this-task scope.
 
 `routes/web.php`'s `/checkout/{id}` throttle and the `web` middleware group's global throttle were removed (see DOCUMENTACAO.md §9) because they shared a rate-limit counter keyed by IP+domain with Livewire's polling requests, causing legitimate payers to get HTTP 429. `TrustProxies` is configured with Cloudflare's IP ranges specifically (not `*`) so `$request->ip()` resolves correctly behind Cloudflare without allowing IP spoofing via `X-Forwarded-For`.

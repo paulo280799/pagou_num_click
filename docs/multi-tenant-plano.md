@@ -34,10 +34,10 @@ Nota: `UserScope` ficou como escopo + `TenantContext`; trait `BelongsToAccount` 
 - [x] `api.token`: autenticar a **conta** (contexto de tenant) sem `loginUsingId` de "primeiro usuário"; `TenantContext` (singleton) lido pelo scope e pelo `creating`.
 - [x] ~~Fechar `PaymentTimer::cancelar()` público~~ — já estava privado no código; falta só corrigir DOCUMENTACAO §8 (item desatualizado).
 
-## Fase 2 — Token seguro (L2)
-- [ ] Migration: `configs.api_token_hash`, `api_token_prefix`, `api_token_last_used_at`; backfill com hash dos tokens atuais.
-- [ ] Middleware compara hash (`hash_equals`); painel mostra só prefixo; ação "gerar/rotacionar token" mostra o valor uma única vez.
-- [ ] Remover coluna `api_token` em texto após janela de migração (aviso aos clientes: o token em uso continua válido).
+## Fase 2 — Token seguro (L2) — FEITA (mesma branch feature/multi-tenant-fase1; coluna removida já na migration, a janela vale para a rotação)
+- [x] Migration: `configs.api_token_hash`, `api_token_prefix`, `api_token_last_used_at`; backfill com hash dos tokens atuais.
+- [x] Middleware compara hash (`hash_equals`); painel mostra só prefixo; ação "gerar/rotacionar token" mostra o valor uma única vez.
+- [x] Remover coluna `api_token` em texto após janela de migração (aviso aos clientes: o token em uso continua válido).
 
 ## Fase 3 — Credenciais por tenant (L1, L4) — maior fase
 - [ ] Tabela `gateway_credentials` (`account_id`, `gateway`, `payload` `encrypted:array`, `enabled`, `last_validated_at`); `APP_KEY` estável (já exigido).

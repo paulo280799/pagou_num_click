@@ -218,8 +218,8 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: '`api_token` da configuração da conta (painel `/admin`). Enviar
-        `Authorization: Bearer <api_token>`.'
+      description: '`api_token` da configuração da conta (painel `/admin`, mostrado só ao gerar).
+        Enviar `Authorization: Bearer <api_token>`.'
   schemas:
     CreatePaymentRequest:
       type: object

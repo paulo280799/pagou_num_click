@@ -118,7 +118,7 @@ class ConfigTest extends TestCase
         $account = \App\Models\Account::factory()->create();
         \Illuminate\Support\Facades\DB::table('configs')->insert([
             'id' => (string) \Illuminate\Support\Str::uuid(), 'duration' => '900', 'notification_url' => 'x', 'redirect_url' => 'x',
-            'api_token' => 'tok', 'account_id' => $account->id, 'created_at' => now(), 'updated_at' => now(),
+            'api_token_hash' => hash('sha256', 'tok'), 'account_id' => $account->id, 'created_at' => now(), 'updated_at' => now(),
         ]);
 
         $config = Config::withoutGlobalScopes()->first();

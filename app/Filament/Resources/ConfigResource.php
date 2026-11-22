@@ -8,7 +8,6 @@ use App\Models\Config;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
-use Illuminate\Support\Str;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -70,11 +69,16 @@ class ConfigResource extends Resource
                             ->color('danger')
                             ->size('sm')
                             ->outlined()
-                            ->requiresConfirmation()
                             ->modalHeading('Regenerar token da API?')
-                            ->modalDescription('O token atual deixa de funcionar imediatamente. Atualize o seu sistema com o novo token para não interromper a criação de cobranças.')
+                            ->modalDescription('O novo token aparece uma única vez. O token atual continua valendo por '.config('integration.api_token_rotation_grace_minutes').' min para você atualizar o seu sistema sem interromper cobranças, a menos que você o revogue agora.')
                             ->modalSubmitActionLabel('Regenerar token')
-                            ->action(function (Forms\Set $set) {
+                            ->form([
+                                Forms\Components\Toggle::make('revoke_now')
+                                    ->label('Revogar o token atual imediatamente')
+                                    ->helperText('Use se o token vazou. O seu sistema para de criar cobranças até receber o novo token.')
+                                    ->default(false),
+                            ])
+                            ->action(function (array $data, Forms\Set $set) {
                                 $config = Config::first();
 
                                 if (! $config) {
@@ -83,19 +87,26 @@ class ConfigResource extends Resource
                                     return;
                                 }
 
-                                $config->forceFill(['api_token' => Str::random(30)])->save();
-                                $set('api_token', $config->api_token);
+                                $token = $config->rotateToken((bool) ($data['revoke_now'] ?? false));
+                                $set('api_token', $token);
 
-                                Notification::make()->title('Token regenerado. Atualize o seu sistema com o novo token.')->success()->send();
+                                Notification::make()
+                                    ->title('Token regenerado')
+                                    ->body('Copie agora: por segurança ele não será exibido de novo. '.$token)
+                                    ->success()
+                                    ->persistent()
+                                    ->send();
                             }),
                     ])
                     ->columns(2)
                     ->schema([
                         Forms\Components\TextInput::make('api_token')
                             ->label('Token de acesso')
-                            ->helperText('Envie no header Authorization: Bearer. Para trocar, use "Regenerar token".')
-                            ->default(fn ($record) => $record->api_token ?? 'Token não gerado ainda.')
+                            ->helperText(fn ($record) => 'Envie no header Authorization: Bearer. O token completo só aparece ao gerar; para trocar, use "Regenerar token".'
+                                .($record?->api_token_last_used_at ? ' Último uso: '.$record->api_token_last_used_at->timezone(config('app.timezone'))->format('d/m/Y H:i').'.' : ''))
+                            ->default(fn ($record) => $record?->maskedApiToken() ?? 'Token não gerado ainda.')
                             ->disabled()
+                            ->dehydrated(false)
                             ->columnSpanFull(),
                         Forms\Components\TextInput::make('notification_url')
                             ->label('URL de notificação (webhook)')
