@@ -129,6 +129,14 @@ paths:
                 $ref: '#/components/schemas/UnauthorizedError'
               example:
                 error: Unauthorized
+        '429':
+          description: Cota da conta excedida (padrão 60 requisições por minuto por conta). Espere `Retry-After` segundos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                error: Too Many Requests
         '403':
           description: Conta suspensa pela plataforma. Checkouts já criados continuam pagáveis até expirar; novas cobranças só voltam com a reativação da conta.
           content:

@@ -252,6 +252,7 @@ Não há `.env.example` no repositório. Variáveis específicas do projeto, al�
 | `MP_URL` / `MP_HTTP_TIMEOUT` | Base URL (padrão `https://api.mercadopago.com`) e timeout (s) das consultas/cobrança de cartão no MP (padrão 15) |
 | `GATEWAY_CREATE_TIMEOUT` | Timeout (s) da criação de PIX, curto de propósito para o failover não esperar 30 s (padrão 5). Não reaproveita `CARD_HTTP_TIMEOUT` |
 | `GATEWAY_CIRCUIT_FAILURES` / `_WINDOW` / `_COOLDOWN` | Circuit breaker do Pagar.me: falhas (3), janela em s (60) e tempo aberto em s (120) |
+| `API_ACCOUNT_RATE_LIMIT` / `API_IP_RATE_LIMIT` | Cota da API por conta (60/min) e teto por IP contra inundação (300/min) |
 | `API_TOKEN_ROTATION_GRACE_MINUTES` | Quanto tempo o token anterior da API segue válido após "Regenerar token" (padrão 60) |
 | `GATEWAY_EXPIRY_GRACE_MINUTES` | Janela de graça para cancelar por expiração quando o gateway não responde (padrão 15) |
 | `APP_URL` | Base do `payment_link` retornado e do link copiado no painel |
@@ -267,7 +268,7 @@ Observações para revisão, das mais importantes às menores. Itens 1, 5, 6, 7,
 **Segurança / integridade**
 1. ~~**Cancelamento forjável no checkout**~~ — **resolvido**: [PaymentTimer](app/Livewire/PaymentTimer.php) não expõe mais `cancelar()` nem `expirationDate` públicos; a expiração é relida do banco em `checkExpiration()`.
 2. ~~**`AccountResource` sem escopo**~~ — **resolvido**: `AccountResource::getEloquentQuery()` restringe à conta do usuário logado (UUID de outra conta → 404).
-3. **Painel/Telescope** — `User::canAccessPanel()` retorna sempre `true`; o gate do Telescope libera qualquer usuário autenticado; `laravel/telescope` está em `require` (produção). Telescope guarda payloads (incluindo dados de clientes e o token) em produção só se cair nos filtros, mas fica exposto a qualquer login.
+3. ~~**Painel/Telescope**~~ — **resolvido**: o gate do Telescope (`viewTelescope`) agora é só de super-admin (`is_super_admin`) e o item "telescope" do menu só aparece para eles (antes qualquer login via dados de **todas** as contas). `canAccessPanel()` do `/admin` segue aberto a qualquer usuário (cada um vê só a própria conta); o do `/platform` exige super-admin. Entradas do Telescope levam a tag `account:{uuid}`.
 4. ~~**`api_token` em texto puro**~~ — **resolvido**: o banco guarda só o SHA-256 (`api_token_hash`), o prefixo (`api_token_prefix`) e, na rotação, o hash anterior com prazo (`previous_api_token_*`); o valor puro aparece uma única vez ao gerar (`pnc_` + 40 caracteres). Tokens antigos foram migrados pelo hash e continuam válidos.
 5. ~~**Bug no `Config::boot`** — usa `$model->api_token` (variável inexistente; deveria ser `$item`), então o `empty()` é sempre verdadeiro e sobrescreve qualquer token fornecido.~~ — **corrigido** (`$item->api_token`); o guard agora funciona e só gera token novo quando não há um já definido no model.
 6. ~~`ApiTokenMiddleware` quebra (erro 500) se a conta do token não tiver nenhum `User`~~ — **corrigido** (responde 401); a API ainda atua sempre como "primeiro usuário da conta".
@@ -310,7 +311,8 @@ Observações para revisão, das mais importantes às menores. Itens 1, 5, 6, 7,
 **Ressalvas**
 - `/checkout/{id}` e `/livewire/update` ficam sem limite por IP; o risco é baixo (id é UUID). Se for preciso proteção, aplicar na Cloudflare (regras de rate limiting).
 - Sugestão futura: remover o `wire:poll.1s` do timer (fazer a contagem em JavaScript) e parar o polling quando o status deixar de ser `PENDING`.
-- O limiter `api` continua por IP; para lojistas com alto volume ou IP de saída compartilhado, considerar chave por `api_token`.
+- **Limites da API por conta** (`config/tenancy.php`): `API_ACCOUNT_RATE_LIMIT` (padrão 60/min) é contado por conta dentro do `ApiTokenMiddleware` (excedeu → `429 {"error":"Too Many Requests"}` com `Retry-After`); o limiter `api` por IP virou só proteção contra inundação, com teto alto (`API_IP_RATE_LIMIT`, padrão 300/min, era 60). Lojistas com IP de saída compartilhado deixam de dividir cota.
+- **Logs por conta**: todo log de requisição de API, scheduler, webhook e `pay-card` leva `account_id` no contexto (`TenantContext::tagLogs`); no Telescope, a tag `account:{uuid}`. O painel `/platform` mostra o último uso da API por conta.
 
 ---
 

@@ -46,7 +46,9 @@ class CardPaymentController extends Controller
         $validated = $request->validated();
         $gateway = GatewayEnum::from(strtoupper($validated['gateway'] ?? 'pagarme'));
         // cada conta cobra com as próprias credenciais: o tenant é o dono do Payment
-        $tenant = $this->gateways->forPayment(Payment::withoutGlobalScopes()->findOrFail($id));
+        $paymentForTenant = Payment::withoutGlobalScopes()->findOrFail($id);
+        \App\Support\TenantContext::tagLogs($paymentForTenant->account_id);
+        $tenant = $this->gateways->forPayment($paymentForTenant);
 
         // O token do browser só vale no gateway em que foi gerado: se a decisão mudou, nada é cobrado e o browser re-tokeniza.
         if (! $tenant->isCardGatewayStillCurrent($gateway)) {

@@ -39,6 +39,7 @@ class PlatformAccountResource extends Resource
             'accounts.*',
             'owner_email' => User::select('email')->whereColumn('account_id', 'accounts.id')->orderBy('id')->limit(1),
             'owner_pending' => User::selectRaw('count(*)')->whereColumn('account_id', 'accounts.id')->whereNull('password_set_at'),
+            'last_api_use' => DB::table('configs')->select('api_token_last_used_at')->whereColumn('account_id', 'accounts.id')->limit(1),
             'payments_total' => DB::table('payments')->selectRaw('count(*)')->whereColumn('account_id', 'accounts.id'),
             'paid_volume' => DB::table('payments')->selectRaw('coalesce(sum(amount), 0)')->whereColumn('account_id', 'accounts.id')
                 ->where('status', StatusPaymentEnum::PAID->value),
@@ -73,6 +74,7 @@ class PlatformAccountResource extends Resource
                         'Convite pendente' => 'warning',
                         default => 'success',
                     }),
+                Tables\Columns\TextColumn::make('last_api_use')->label('Último uso da API')->dateTime('d/m/Y H:i')->placeholder('nunca')->since()->toggleable(),
                 Tables\Columns\TextColumn::make('payments_total')->label('Cobranças')->numeric(),
                 Tables\Columns\TextColumn::make('paid_volume')->label('Volume pago')->money('BRL'),
                 Tables\Columns\TextColumn::make('created_at')->label('Criada em')->dateTime('d/m/Y')->toggleable(),

@@ -55,6 +55,7 @@ class AdminPanelProvider extends PanelProvider
             ->userMenuItems([
                 'telescope' => MenuItem::make()
                     ->label(fn() => 'telescope')
+                    ->visible(fn (): bool => (bool) auth()->user()?->is_super_admin)
                     ->url(fn (): string => '/telescope')
                     ->icon('heroicon-m-user-circle')
             ])

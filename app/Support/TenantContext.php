@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\Log;
+
 /**
  * Conta (tenant) da requisição atual. Duas origens, nesta ordem:
  *  1. definida explicitamente (API: `ApiTokenMiddleware` resolve a conta pelo token, sem logar usuário);
@@ -16,6 +18,13 @@ class TenantContext
     public function set(?string $accountId): void
     {
         $this->accountId = $accountId;
+        self::tagLogs($accountId);
+    }
+
+    /** Todo log a partir daqui leva `account_id` (requisição de API, scheduler, webhooks): dá para filtrar por cliente. */
+    public static function tagLogs(?string $accountId): void
+    {
+        Log::withContext(['account_id' => $accountId]);
     }
 
     public function accountId(): ?string

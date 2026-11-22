@@ -25,7 +25,7 @@ class RouteServiceProvider extends ServiceProvider
     public function boot(): void
     {
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+            return Limit::perMinute((int) config('tenancy.api_ip_rate_limit_per_minute'))->by($request->user()?->id ?: $request->ip());
         });
 
         RateLimiter::for('pay-card', function (Request $request) {

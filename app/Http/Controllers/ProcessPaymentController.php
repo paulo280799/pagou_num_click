@@ -6,6 +6,7 @@ use App\Enums\PaymentMethodEnum;
 use App\Enums\StatusPaymentEnum;
 use App\Models\Payment;
 use App\Services\Gateways\GatewayManager;
+use App\Support\TenantContext;
 use App\Support\ChargeOutcome;
 use App\Support\ChargeResult;
 use App\Support\Gateways\GatewayUnavailableException;
@@ -25,6 +26,8 @@ class ProcessPaymentController extends Controller
             ->get();
 
         foreach ($payments as $payment) {
+            TenantContext::tagLogs($payment->account_id);
+
             try {
                 $this->processPayment($payment);
             } catch (GatewayUnavailableException $e) {
@@ -39,6 +42,8 @@ class ProcessPaymentController extends Controller
     /** Reavalia um único pagamento (webhook do provedor): mesma regra do polling, sem esperar o scheduler. */
     public function processOne(Payment $payment): void
     {
+        TenantContext::tagLogs($payment->account_id);
+
         if ($payment->status !== StatusPaymentEnum::PENDING) {
             return;
         }

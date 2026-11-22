@@ -81,6 +81,14 @@ Redirecione o pagador para essa URL. `gateway` (`pagarme` ou `mercadopago`) diz 
 { "error": "Unauthorized" }
 ```
 
+### `429`
+
+A conta passou da cota (padrão 60 requisições por minuto, por conta, não por IP). O header `Retry-After` diz em quantos segundos tentar de novo.
+
+```json
+{ "error": "Too Many Requests" }
+```
+
 ### `403`
 
 Conta suspensa pela plataforma. Checkouts já criados continuam pagáveis até expirar.

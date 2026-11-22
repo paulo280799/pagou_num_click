@@ -54,10 +54,10 @@ Nota: `UserScope` ficou como escopo + `TenantContext`; trait `BelongsToAccount` 
 - [x] Conta suspensa: API responde 403, checkout existente continua pagável até expirar.
 - [ ] Papéis dentro da conta (`owner`/`viewer`) se pedido; `AccountResource` já filtra pela própria conta.
 
-## Fase 5 — Operação por tenant
-- [ ] Rate limit por conta na API; quotas opcionais.
-- [ ] Logs/Telescope com `account_id`; métricas por conta.
-- [ ] Documentar em DOCUMENTACAO.md §3/§7/§8, atualizar OpenAPI (token e erros 403) e CHANGELOG.
+## Fase 5 — Operação por tenant — FEITA (quotas por plano ficaram de fora)
+- [x] Rate limit por conta na API; quotas opcionais.
+- [x] Logs/Telescope com `account_id`; métricas por conta.
+- [x] Documentar em DOCUMENTACAO.md §3/§7/§8, atualizar OpenAPI (token e erros 403) e CHANGELOG.
 
 ## Ordem e entrega
 Fase 1 e 2 sobem sozinhas (valor imediato, sem mudar contrato). Fase 3 em PRs menores: (a) tabela + `GatewayManager::for`, (b) breaker/webhook, (c) tela. Fase 4 segue D3 (convite). Cada fase com a doc que invalida.
