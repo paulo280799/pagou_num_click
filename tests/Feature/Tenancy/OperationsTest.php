@@ -104,4 +104,23 @@ class OperationsTest extends TestCase
         $this->actingAs(User::factory()->create(['account_id' => Account::factory()->create()->id]))
             ->get('/admin')->assertOk()->assertDontSee('/telescope');
     }
+
+    /** Regressão: a tag do Telescope rodava dentro da query do usuário e, via auth()->user(), recursava até o segfault. */
+    public function test_peeking_the_tenant_never_resolves_the_user_nor_queries(): void
+    {
+        $user = User::factory()->create(['account_id' => Account::factory()->create()->id]);
+        auth()->guard()->setUser($user);
+        auth()->forgetGuards();   // há um usuário na sessão, mas o guard ainda não o carregou
+        $queries = 0;
+        \Illuminate\Support\Facades\DB::listen(function () use (&$queries) { $queries++; });
+
+        $this->assertNull(app(\App\Support\TenantContext::class)->peekAccountId());
+        $this->assertSame(0, $queries);
+
+        $this->actingAs($user);
+        $this->assertSame($user->account_id, app(\App\Support\TenantContext::class)->peekAccountId());
+
+        app(\App\Support\TenantContext::class)->set('conta-explicita');
+        $this->assertSame('conta-explicita', app(\App\Support\TenantContext::class)->peekAccountId());
+    }
 }

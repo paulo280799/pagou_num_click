@@ -32,6 +32,16 @@ class TenantContext
         return $this->accountId ?? auth()->user()?->account_id;
     }
 
+    /**
+     * Conta já conhecida, SEM provocar a resolução do usuário autenticado (que faz uma query). Para ganchos que rodam
+     * dentro de outra query — ex.: a tag do Telescope, que é chamada ao registrar a própria query do usuário e,
+     * com `auth()->user()`, entraria em recursão infinita.
+     */
+    public function peekAccountId(): ?string
+    {
+        return $this->accountId ?? (auth()->hasUser() ? auth()->user()->account_id : null);
+    }
+
     /** Para quem grava: sem tenant não se cria registro de conta nenhuma. */
     public function requireAccountId(): string
     {

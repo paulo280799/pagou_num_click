@@ -20,7 +20,7 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
 
         // filtrar por cliente no Telescope: tag `account:{uuid}`
         Telescope::tag(function (IncomingEntry $entry) {
-            $accountId = app(\App\Support\TenantContext::class)->accountId();
+            $accountId = app(\App\Support\TenantContext::class)->peekAccountId(); // nunca accountId(): ver o doc do peek
 
             return $accountId ? ['account:'.$accountId] : [];
         });
