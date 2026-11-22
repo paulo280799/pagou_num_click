@@ -64,6 +64,15 @@ class PlatformTest extends TestCase
         $this->actingAs($this->admin)->get('/admin')->assertOk();
     }
 
+    public function test_super_admins_get_a_shortcut_to_the_platform_panel_and_back(): void
+    {
+        $this->actingAs($this->admin)->get('/admin')->assertOk()->assertSee('Painel da plataforma')->assertSee('/platform', false);
+        $this->actingAs($this->admin)->get('/platform/accounts')->assertOk()->assertSee('Painel da conta');
+
+        $this->actingAs(User::factory()->create(['account_id' => Account::factory()->create()->id]))
+            ->get('/admin')->assertOk()->assertDontSee('Painel da plataforma');
+    }
+
     public function test_creating_an_account_invites_the_owner(): void
     {
         Notification::fake();

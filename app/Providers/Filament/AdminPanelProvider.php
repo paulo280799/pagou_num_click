@@ -53,6 +53,12 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
 
             ->userMenuItems([
+                // só super-admins: atalho para o painel da plataforma (contas, convites, suspensão)
+                'platform' => MenuItem::make()
+                    ->label('Painel da plataforma')
+                    ->url('/platform')
+                    ->icon('heroicon-m-building-office-2')
+                    ->visible(fn (): bool => (bool) auth()->user()?->is_super_admin),
                 'telescope' => MenuItem::make()
                     ->label(fn() => 'telescope')
                     ->visible(fn (): bool => (bool) auth()->user()?->is_super_admin)

@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use Filament\FontProviders\GoogleFontProvider;
+use Filament\Navigation\MenuItem;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -32,6 +33,9 @@ class PlatformPanelProvider extends PanelProvider
             ->breadcrumbs(false)
             ->globalSearch(false)
             ->renderHook(PanelsRenderHook::STYLES_AFTER, fn () => view('filament.theme'))
+            ->userMenuItems([
+                'account' => MenuItem::make()->label('Painel da conta')->url('/admin')->icon('heroicon-m-wallet'),
+            ])
             ->discoverResources(in: app_path('Filament/Platform/Resources'), for: 'App\\Filament\\Platform\\Resources')
             ->discoverPages(in: app_path('Filament/Platform/Pages'), for: 'App\\Filament\\Platform\\Pages')
             ->middleware([

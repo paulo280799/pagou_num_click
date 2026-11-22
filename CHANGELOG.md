@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (33)
+- **Atalho entre painéis (achado na validação manual)**: o super-admin é também usuário de uma conta e entra por `/admin/login` sem perceber que o painel da plataforma é `/platform`. O menu do usuário do `/admin` ganhou "Painel da plataforma" (só super-admin) e o do `/platform` ganhou "Painel da conta". Teste em `PlatformTest`.
+
 ## 2026-11-22 (32)
 - **Desativar um gateway vale só para cobranças novas (decisão do produto, validação manual)**: antes a página Gateways **bloqueava** desativar enquanto houvesse cobrança em andamento. Agora desativa sempre, e o gateway desativado continua sendo usado para **acompanhar o que já existe** (polling de PIX e cartão, expiração, vigia de PIX de cartão pago, webhook do MP) com as credenciais guardadas; para cobranças novas ele some (não é escolhido para cobrar, não oferece tokenização de cartão, não conta como redundância, `isCardGatewayStillCurrent` falso). `GatewayCredentialResolver::pagarme/mercadoPago($id, $includeDisabled)`; `PagarmeGateway`/`MercadoPagoGateway` ganham o flag `active` (`isConfigured()` = credencial **e** ativo). O painel avisa "desativado para novas cobranças" e quantas continuam em andamento. Se todos os gateways ficam desativados, `create-payment` responde 422 como sem gateway. Testes: `Tenancy/DisabledGatewayTest` e webhook do MP desativado; os dois testes de bloqueio foram substituídos.
 
