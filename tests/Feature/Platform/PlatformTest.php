@@ -124,8 +124,8 @@ class PlatformTest extends TestCase
         $this->assertTrue(Hash::check('senha-bem-forte', $owner->password));
 
         // uso único
-        $this->get($url)->assertStatus(410);
-        $this->post($url, ['password' => 'outra-senha-forte', 'password_confirmation' => 'outra-senha-forte'])->assertStatus(410);
+        $this->get($url)->assertStatus(410)->assertSee('Este convite já foi utilizado')->assertSee('Ir para o login')->assertSee('/admin/login', false);
+        $this->post($url, ['password' => 'outra-senha-forte', 'password_confirmation' => 'outra-senha-forte'])->assertStatus(410)->assertSee('Este convite já foi utilizado');
         $this->assertTrue(Hash::check('senha-bem-forte', $owner->fresh()->password));
     }
 
@@ -135,14 +135,14 @@ class PlatformTest extends TestCase
         $owner->forceFill(['invitation_pending' => true])->save();
         $url = AccountInvitation::urlFor($owner);
 
-        $this->get(route('invitation.show', $owner))->assertForbidden();                       // sem assinatura
-        $this->get($url.'x')->assertForbidden();                                               // assinatura adulterada
+        $this->get(route('invitation.show', $owner))->assertForbidden()->assertSee('Link inválido ou expirado');   // sem assinatura
+        $this->get($url.'x')->assertForbidden()->assertSee('Link inválido ou expirado');                         // assinatura adulterada
         $this->post($url, ['password' => 'curta', 'password_confirmation' => 'curta'])->assertSessionHasErrors('password');
         $this->post($url, ['password' => 'senha-bem-forte', 'password_confirmation' => 'diferente'])->assertSessionHasErrors('password');
         $this->assertTrue($owner->fresh()->invitation_pending);
 
         $this->travel(AccountInvitation::VALID_DAYS + 1)->days();
-        $this->get($url)->assertForbidden();                                                   // expirado
+        $this->get($url)->assertForbidden()->assertSee('Link inválido ou expirado')->assertDontSee('Whoops');     // expirado
     }
 
     public function test_listing_shows_status_and_numbers_of_every_account_without_tenant_scope(): void

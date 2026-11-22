@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (36)
+- **Telas próprias para convite já usado e link inválido (achado na validação manual)**: convite reutilizado mostrava a página de erro do framework (Ignition com `APP_DEBUG=true`, página genérica em produção). Agora: **410** "Este convite já foi utilizado" (explica que a senha já foi definida, com botão "Ir para o login") e **403** "Link inválido ou expirado" (assinatura adulterada ou passou dos 7 dias; tratado no `Handler` só nas rotas `invitation.*`). Views em `resources/views/invitation/` (`layout`, `form`, `unavailable`, mesmo visual). Verificado por HTTP real com `APP_DEBUG=true`.
+
 ## 2026-11-22 (35)
 - **CRUD de administradores no painel da plataforma**: menu "Administradores" (`/platform/administradores`) para gerenciar os super-admins. Lista só quem tem `is_super_admin` (marca "Você" no usuário logado); criar com nome, e-mail (único em toda a tabela `users`) e senha ≥ 8 com confirmação — a flag entra por `forceFill` (continua fora do `$fillable`) e o usuário fica na conta "Plataforma"; editar (senha em branco mantém a atual, a flag nunca muda por aqui); remover (não a si mesmo; sempre sobra ao menos um). Donos de conta não aparecem e dão 404 se abertos por esta rota. Testes: `Platform/PlatformAdminsTest`.
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Definir senha</title>
+    <title>@yield('title')</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
     <style>
         :root{--bg:#F7F7F4;--surface:#fff;--ink:#141413;--muted:#6B6A64;--line:#E8E6DF;--accent:#00B389;--warn:#C1440E}
@@ -18,21 +18,13 @@
         input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         button{width:100%;margin-top:22px;padding:13px;border:0;border-radius:10px;background:var(--accent);color:#06251C;font:600 1rem inherit;cursor:pointer}
         .err{color:var(--warn);font-size:.85rem;margin-top:6px}
+        .btn{display:block;text-align:center;margin-top:22px;padding:13px;border-radius:10px;background:var(--accent);color:#06251C;font-weight:600;text-decoration:none}
+        .icon{width:44px;height:44px;border-radius:12px;background:var(--bg);border:1px solid var(--line);display:grid;place-items:center;font-size:1.3rem;margin-bottom:16px}
     </style>
 </head>
 <body>
 <main>
-    <h1>Defina sua senha</h1>
-    <p>{{ $user->name }}, escolha uma senha para acessar o painel.</p>
-    <form method="POST" action="{{ $action }}">
-        @csrf
-        <label for="password">Senha (mínimo 8 caracteres)</label>
-        <input id="password" name="password" type="password" required autocomplete="new-password" autofocus>
-        @error('password')<div class="err">{{ $message }}</div>@enderror
-        <label for="password_confirmation">Repita a senha</label>
-        <input id="password_confirmation" name="password_confirmation" type="password" required autocomplete="new-password">
-        <button type="submit">Entrar</button>
-    </form>
+    @yield('content')
 </main>
 </body>
 </html>
