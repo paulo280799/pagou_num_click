@@ -42,7 +42,7 @@ class AdminPanelTest extends TestCase
 
         $this->actingAs($user)
             ->get('/admin/payments')
-            ->assertSee('.fi-resource-payments .fi-tabs{margin-left:0;margin-right:auto', false);
+            ->assertSee('.fi-resource-payments .fi-tabs { margin-left: 0; margin-right: auto', false);
     }
 
     public function test_payment_view_action_opens_without_error(): void
