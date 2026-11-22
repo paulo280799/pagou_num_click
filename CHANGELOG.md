@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-22 (31)
+- **Página Gateways — achados da validação manual (teste 3)**: (1) **validação de formato** antes de gravar, para pegar colagem trocada: Pagar.me secreta começa com `sk_` e pública com `pk_`; Mercado Pago: chave pública = `APP_USR-`/`TEST-` + UUID, Access Token = `APP_USR-`/`TEST-` e **não** pode casar com o formato da pública (caso real: o Access Token foi colado no campo da chave pública, que é aberto, e ficou à mostra); (2) "mantivemos a anterior" só aparece quando a anterior funciona (ativa e já validada); um rascunho ruim é simplesmente substituído ("salva desativada"); (3) corrigir a credencial de um rascunho que ficou desativado por validação ruim **reativa e valida sozinho**, sem depender do toggle (que ficava preso em desligado e salvava a chave certa sem validar). Testes novos em `GatewayCredentialsPageTest` (com tokens de exemplo falsos).
+
 ## 2026-11-22 (30)
 - **Página Gateways: prévia do que está salvo (achado na validação manual).** Os campos secretos voltam vazios (por segurança, "em branco = manter") e isso parecia que nada tinha sido salvo. Agora mostram um placeholder `Salva: ••••9999` (4 últimos caracteres da chave/token/segredo; da senha da API só `Salva: ••••••••`) e o texto "Em branco, mantém ...". Chave pública não é segredo e continua voltando preenchida. O valor completo nunca vai para a tela. Teste `test_saved_secrets_show_a_masked_preview_in_their_fields`.
 

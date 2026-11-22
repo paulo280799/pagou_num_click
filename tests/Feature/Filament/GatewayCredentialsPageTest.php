@@ -145,6 +145,68 @@ class GatewayCredentialsPageTest extends TestCase
         $this->assertTrue($this->row(GatewayEnum::PAGARME)->enabled);
     }
 
+    public function test_fixing_a_failed_draft_reactivates_it_and_never_claims_to_keep_a_broken_one(): void
+    {
+        Http::fake(['*mercadopago.test/users/me' => Http::sequence()->push([], 403)->push([], 403)->push(['site_id' => 'MLB'], 200)]);
+        $bad = 'TEST-'.str_repeat('a', 40);
+
+        // 1ª tentativa ruim: salva desativada
+        Livewire::test(GatewayCredentialsPage::class)->fillForm(['mp_access_token' => $bad])->call('save');
+        $this->assertFalse($this->row(GatewayEnum::MERCADOPAGO)->enabled);
+
+        // 2ª ruim: continua rascunho (não é "a anterior que funciona"), e o aviso não diz que mantivemos nada
+        Livewire::test(GatewayCredentialsPage::class)->fillForm(['mp_access_token' => $bad.'b'])->call('save')
+            ->assertNotified('Mercado Pago: salva desativada, a validação falhou.');
+
+        // corrigida: valida e reativa SOZINHA, mesmo com o toggle ainda desligado na tela
+        Livewire::test(GatewayCredentialsPage::class)->assertFormSet(['mp_enabled' => false])
+            ->fillForm(['mp_access_token' => 'TEST-'.str_repeat('c', 40)])->call('save');
+
+        $row = $this->row(GatewayEnum::MERCADOPAGO);
+        $this->assertTrue($row->enabled);
+        $this->assertNotNull($row->last_validated_at);
+        $this->assertNull($row->last_validation_error);
+    }
+
+    public function test_pasting_the_access_token_in_the_public_key_field_is_rejected_before_saving(): void
+    {
+        Http::fake();
+        $accessToken = 'APP_USR-1111111111111111-010101-00000000000000000000000000000000-1111111111';
+
+        Livewire::test(GatewayCredentialsPage::class)
+            ->fillForm(['mp_access_token' => 'TEST-'.str_repeat('a', 40), 'mp_public_key' => $accessToken])
+            ->call('save')
+            ->assertHasFormErrors(['mp_public_key']);
+
+        $this->assertNull($this->row(GatewayEnum::MERCADOPAGO));
+        Http::assertNothingSent();
+    }
+
+    public function test_the_public_key_pasted_as_access_token_and_other_format_slips_are_rejected(): void
+    {
+        Http::fake();
+        $publicKey = 'APP_USR-3b2f1c4d-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
+
+        Livewire::test(GatewayCredentialsPage::class)
+            ->fillForm(['mp_access_token' => $publicKey, 'pagarme_user' => 'pk_test_publica', 'pagarme_public_key' => 'sk_test_secreta'])
+            ->call('save')
+            ->assertHasFormErrors(['mp_access_token', 'pagarme_user', 'pagarme_public_key']);
+
+        $this->assertSame(0, GatewayCredential::withoutGlobalScopes()->count());
+    }
+
+    public function test_valid_formats_are_accepted(): void
+    {
+        Http::fake(['*' => Http::response([], 200)]);
+
+        Livewire::test(GatewayCredentialsPage::class)
+            ->fillForm([
+                'pagarme_user' => 'sk_test_abc', 'pagarme_public_key' => 'pk_test_abc',
+                'mp_access_token' => 'APP_USR-1111111111111111-010101-00000000000000000000000000000000-1111111111',
+                'mp_public_key' => 'APP_USR-3b2f1c4d-1a2b-4c3d-8e9f-0a1b2c3d4e5f',
+            ])->call('save')->assertHasNoFormErrors();
+    }
+
     public function test_both_gateways_turn_redundancy_on(): void
     {
         Http::fake(['*' => Http::response([], 200)]);

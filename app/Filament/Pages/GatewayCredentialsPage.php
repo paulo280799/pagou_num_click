@@ -29,6 +29,9 @@ class GatewayCredentialsPage extends Page implements HasForms
 {
     use InteractsWithForms;
 
+    /** Chave pública do Mercado Pago: prefixo + UUID. O Access Token, mais longo, não casa (evita colar um no lugar do outro). */
+    private const MP_PUBLIC_KEY = '/^(APP_USR|TEST)-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i';
+
     protected static ?string $navigationIcon = 'heroicon-o-key';
 
     protected static ?string $navigationLabel = 'Gateways';
@@ -148,12 +151,14 @@ class GatewayCredentialsPage extends Page implements HasForms
                         Placeholder::make('pagarme_status')->hiddenLabel()->content(fn () => $this->statusLine(GatewayEnum::PAGARME))->columnSpanFull(),
                         Toggle::make('pagarme_enabled')->label('Ativo')->columnSpanFull(),
                         TextInput::make('pagarme_user')->label('Chave secreta (sk_...)')->password()->autocomplete(false)->maxLength(255)
+                            ->regex('/^sk_/')->validationMessages(['regex' => 'A chave secreta do Pagar.me começa com sk_ (a pública, pk_, vai no campo abaixo).'])
                             ->placeholder(fn () => $this->savedPreview(GatewayEnum::PAGARME, 'user', 'Cole a chave secreta'))
                             ->helperText('Em branco, mantém a chave salva.'),
                         TextInput::make('pagarme_password')->label('Senha da API (se houver)')->password()->autocomplete(false)->maxLength(255)
                             ->placeholder(fn () => $this->savedPreview(GatewayEnum::PAGARME, 'password', 'Opcional'))
                             ->helperText('Em branco, mantém a senha salva.'),
                         TextInput::make('pagarme_public_key')->label('Chave pública (pk_...) — habilita o cartão')->maxLength(255)->columnSpanFull()
+                            ->regex('/^pk_/')->validationMessages(['regex' => 'A chave pública do Pagar.me começa com pk_. Não cole aqui a chave secreta (sk_).'])
                             ->helperText('Deve ser do mesmo ambiente (teste/produção) da chave secreta.'),
                     ]),
 
@@ -165,12 +170,20 @@ class GatewayCredentialsPage extends Page implements HasForms
                         Placeholder::make('mp_status')->hiddenLabel()->content(fn () => $this->statusLine(GatewayEnum::MERCADOPAGO))->columnSpanFull(),
                         Toggle::make('mp_enabled')->label('Ativo')->columnSpanFull(),
                         TextInput::make('mp_access_token')->label('Access token')->password()->autocomplete(false)->maxLength(255)
+                            ->rule(fn () => function (string $attribute, $value, \Closure $fail) {
+                                if (preg_match(self::MP_PUBLIC_KEY, (string) $value)) {
+                                    $fail('Isto parece a chave pública. Aqui vai o Access Token (APP_USR-... ou TEST-..., bem mais longo).');
+                                } elseif (! preg_match('/^(APP_USR|TEST)-/', (string) $value)) {
+                                    $fail('O Access Token do Mercado Pago começa com APP_USR- (produção) ou TEST- (teste).');
+                                }
+                            })
                             ->placeholder(fn () => $this->savedPreview(GatewayEnum::MERCADOPAGO, 'access_token', 'Cole o access token'))
                             ->helperText('Em branco, mantém o token salvo.'),
                         TextInput::make('mp_webhook_secret')->label('Segredo do webhook')->password()->autocomplete(false)->maxLength(255)
                             ->placeholder(fn () => $this->savedPreview(GatewayEnum::MERCADOPAGO, 'webhook_secret', 'Cole o segredo do webhook'))
                             ->helperText('Em branco, mantém o segredo salvo.'),
-                        TextInput::make('mp_public_key')->label('Chave pública — habilita o cartão')->maxLength(255)->columnSpanFull(),
+                        TextInput::make('mp_public_key')->label('Chave pública — habilita o cartão')->maxLength(255)->columnSpanFull()
+                            ->regex(self::MP_PUBLIC_KEY)->validationMessages(['regex' => 'Formato inválido para a chave pública (APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). Se você colou um valor longo, é o Access Token: o lugar dele é o campo acima.']),
                         Placeholder::make('mp_webhook_url')
                             ->label('URL do webhook (cadastre no painel do Mercado Pago, tópico de ordens)')
                             ->content(fn () => route('webhooks.mercadopago', ['account' => $this->accountId()]))
@@ -258,6 +271,13 @@ class GatewayCredentialsPage extends Page implements HasForms
         $label = $gateway === GatewayEnum::PAGARME ? 'Pagar.me' : 'Mercado Pago';
         $changedSecrets = $merged !== $current;
 
+        // rascunho que ficou desativado por validação ruim: corrigir a credencial o reativa (senão o toggle "preso"
+        // em desligado salvaria a chave certa sem nunca validá-la)
+        $isFailedDraft = $row && ! $row->enabled && $row->last_validation_error !== null;
+        if ($isFailedDraft && $changedSecrets) {
+            $enabled = true;
+        }
+
         // Valida ANTES de gravar: uma credencial colada errada não pode substituir a que funciona.
         $ok = true;
         $error = null;
@@ -265,7 +285,10 @@ class GatewayCredentialsPage extends Page implements HasForms
             [$ok, $error] = app(CredentialTester::class)->test($gateway, $merged);
         }
 
-        if (! $ok && $row) {
+        // só "mantém a anterior" quando a anterior funciona (ativa e já validada); um rascunho ruim é simplesmente substituído
+        $previousWorks = $row && $row->enabled && $row->last_validated_at !== null;
+
+        if (! $ok && $previousWorks) {
             Notification::make()->title("{$label}: a credencial nova foi recusada; mantivemos a anterior.")->body($error)->danger()->send();
 
             return;
